@@ -1,21 +1,31 @@
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 import crypto from 'crypto';
+import { get } from 'lodash';
 
-export default function (server) {
-  async function updateMetadata(urlId, urlDoc) {
-    const client = server.plugins.elasticsearch.client;
-    const kibanaIndex = server.config().get('kibana.index');
-
+export function shortUrlLookupProvider(server) {
+  async function updateMetadata(doc, req) {
     try {
-      await client.update({
-        index: kibanaIndex,
-        type: 'url',
-        id: urlId,
-        body: {
-          doc: {
-            'accessDate': new Date(),
-            'accessCount': urlDoc._source.accessCount + 1
-          }
-        }
+      await req.getSavedObjectsClient().update('url', doc.id, {
+        accessDate: new Date(),
+        accessCount: get(doc, 'attributes.accessCount', 0) + 1
       });
     } catch (err) {
       server.log('Warning: Error updating url metadata', err);
@@ -23,81 +33,35 @@ export default function (server) {
     }
   }
 
-  async function getUrlDoc(urlId) {
-    const urlDoc = await new Promise((resolve, reject) => {
-      const client = server.plugins.elasticsearch.client;
-      const kibanaIndex = server.config().get('kibana.index');
-
-      client.get({
-        index: kibanaIndex,
-        type: 'url',
-        id: urlId
-      })
-      .then(response => {
-        resolve(response);
-      })
-      .catch(err => {
-        resolve();
-      });
-    });
-
-    return urlDoc;
-  }
-
-  async function createUrlDoc(url, urlId) {
-    const newUrlId = await new Promise((resolve, reject) => {
-      const client = server.plugins.elasticsearch.client;
-      const kibanaIndex = server.config().get('kibana.index');
-
-      client.index({
-        index: kibanaIndex,
-        type: 'url',
-        id: urlId,
-        body: {
-          url,
-          'accessCount': 0,
-          'createDate': new Date(),
-          'accessDate': new Date()
-        }
-      })
-      .then(response => {
-        resolve(response._id);
-      })
-      .catch(err => {
-        reject(err);
-      });
-    });
-
-    return newUrlId;
-  }
-
-  function createUrlId(url) {
-    const urlId = crypto.createHash('md5')
-    .update(url)
-    .digest('hex');
-
-    return urlId;
-  }
-
   return {
-    async generateUrlId(url) {
-      const urlId = createUrlId(url);
-      const urlDoc = await getUrlDoc(urlId);
-      if (urlDoc) return urlId;
+    async generateUrlId(url, req) {
+      const id = crypto.createHash('md5').update(url).digest('hex');
+      const savedObjectsClient = req.getSavedObjectsClient();
+      const { isConflictError } = savedObjectsClient.errors;
 
-      return createUrlDoc(url, urlId);
-    },
-    async getUrl(urlId) {
       try {
-        const urlDoc = await getUrlDoc(urlId);
-        if (!urlDoc) throw new Error('Requested shortened url does not exist in kibana index');
+        const doc = await savedObjectsClient.create('url', {
+          url,
+          accessCount: 0,
+          createDate: new Date(),
+          accessDate: new Date()
+        }, { id });
 
-        updateMetadata(urlId, urlDoc);
+        return doc.id;
+      } catch (error) {
+        if (isConflictError(error)) {
+          return id;
+        }
 
-        return urlDoc._source.url;
-      } catch (err) {
-        return '/';
+        throw error;
       }
+    },
+
+    async getUrl(id, req) {
+      const doc = await req.getSavedObjectsClient().get('url', id);
+      updateMetadata(doc, req);
+
+      return doc.attributes.url;
     }
   };
-};
+}

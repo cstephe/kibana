@@ -1,13 +1,30 @@
-import { RequestFailure, SearchTimeout, ShardFailure } from 'ui/errors';
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 
-import ReqStatusProvider from './req_status';
-import NotifierProvider from './notifier';
+import { RequestFailure, SearchTimeout, ShardFailure } from '../../errors';
 
-export default function CourierFetchCallResponseHandlers(Private, Promise) {
-  const ABORTED = Private(ReqStatusProvider).ABORTED;
-  const INCOMPLETE = Private(ReqStatusProvider).INCOMPLETE;
-  const notify = Private(NotifierProvider);
+import { RequestStatus } from './req_status';
+import { courierNotifier } from './notifier';
 
+export function CallResponseHandlersProvider(Private, Promise) {
+  const ABORTED = RequestStatus.ABORTED;
+  const INCOMPLETE = RequestStatus.INCOMPLETE;
 
   function callResponseHandlers(requests, responses) {
     return Promise.map(requests, function (req, i) {
@@ -15,14 +32,14 @@ export default function CourierFetchCallResponseHandlers(Private, Promise) {
         return ABORTED;
       }
 
-      let resp = responses[i];
+      const resp = responses[i];
 
       if (resp.timed_out) {
-        notify.warning(new SearchTimeout());
+        courierNotifier.warning(new SearchTimeout());
       }
 
       if (resp._shards && resp._shards.failed) {
-        notify.warning(new ShardFailure(resp));
+        courierNotifier.warning(new ShardFailure(resp));
       }
 
       function progress() {
@@ -42,16 +59,9 @@ export default function CourierFetchCallResponseHandlers(Private, Promise) {
         }
       }
 
-      return Promise.try(function () {
-        return req.transformResponse(resp);
-      })
-      .then(function () {
-        resp = arguments[0];
-        return req.handleResponse(resp);
-      })
-      .then(progress);
+      return Promise.try(() => req.handleResponse(resp)).then(progress);
     });
   }
 
   return callResponseHandlers;
-};
+}

@@ -1,144 +1,233 @@
-import 'ui/field_format_editor';
-import 'angular-bootstrap-colorpicker';
-import 'angular-bootstrap-colorpicker/css/colorpicker.css';
-import _ from 'lodash';
-import RegistryFieldFormatsProvider from 'ui/registry/field_formats';
-import IndexPatternsFieldProvider from 'ui/index_patterns/_field';
-import uiModules from 'ui/modules';
-import fieldEditorTemplate from 'ui/field_editor/field_editor.html';
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 
+
+import '../field_format_editor';
+import _ from 'lodash';
+import { fieldFormats } from '../registry/field_formats';
+import { IndexPatternsFieldProvider } from '../index_patterns/_field';
+import { uiModules } from '../modules';
+import fieldEditorTemplate from './field_editor.html';
+import { toastNotifications } from '../notify';
+import '../directives/documentation_href';
+import './field_editor.less';
+import {
+  GetEnabledScriptingLanguagesProvider,
+  getSupportedScriptingLanguages,
+  getDeprecatedScriptingLanguages
+} from '../scripting_languages';
+import { getKbnTypeNames } from '../../../utils';
 
 uiModules
-.get('kibana', ['colorpicker.module'])
-.directive('fieldEditor', function (Private, $sce) {
-  let fieldFormats = Private(RegistryFieldFormatsProvider);
-  let Field = Private(IndexPatternsFieldProvider);
-  let scriptingInfo = $sce.trustAsHtml(require('ui/field_editor/scripting_info.html'));
-  let scriptingWarning = $sce.trustAsHtml(require('ui/field_editor/scripting_warning.html'));
+  .get('kibana')
+  .directive('fieldEditor', function (Private, $sce, confirmModal, config) {
+    const getConfig = (...args) => config.get(...args);
 
-  return {
-    restrict: 'E',
-    template: fieldEditorTemplate,
-    scope: {
-      getIndexPattern: '&indexPattern',
-      getField: '&field'
-    },
-    controllerAs: 'editor',
-    controller: function ($scope, Notifier, kbnUrl) {
-      let self = this;
-      let notify = new Notifier({ location: 'Field Editor' });
+    const Field = Private(IndexPatternsFieldProvider);
+    const getEnabledScriptingLanguages = Private(GetEnabledScriptingLanguagesProvider);
 
-      self.scriptingInfo = scriptingInfo;
-      self.scriptingWarning = scriptingWarning;
+    const fieldTypesByLang = {
+      painless: ['number', 'string', 'date', 'boolean'],
+      expression: ['number'],
+      default: getKbnTypeNames()
+    };
 
-      self.indexPattern = $scope.getIndexPattern();
-      self.field = shadowCopy($scope.getField());
-      self.formatParams = self.field.format.params();
+    return {
+      restrict: 'E',
+      template: fieldEditorTemplate,
+      scope: {
+        getIndexPattern: '&indexPattern',
+        getField: '&field'
+      },
+      controllerAs: 'editor',
+      controller: function ($scope, kbnUrl) {
+        const self = this;
 
-      // only init on first create
-      self.creating = !self.indexPattern.fields.byName[self.field.name];
-      self.selectedFormatId = _.get(self.indexPattern, ['fieldFormatMap', self.field.name, 'type', 'id']);
-      self.defFormatType = initDefaultFormat();
-      self.fieldFormatTypes = [self.defFormatType].concat(fieldFormats.byFieldType[self.field.type] || []);
-
-      self.cancel = redirectAway;
-      self.save = function () {
-        let indexPattern = self.indexPattern;
-        let fields = indexPattern.fields;
-        let field = self.field.toActualField();
-
-        fields.remove({ name: field.name });
-        fields.push(field);
-
-        if (!self.selectedFormatId) {
-          delete indexPattern.fieldFormatMap[field.name];
-        } else {
-          indexPattern.fieldFormatMap[field.name] = self.field.format;
-        }
-
-        return indexPattern.save()
-        .then(function () {
-          notify.info('Saved Field "' + self.field.name + '"');
-          redirectAway();
-        });
-      };
-
-      self.delete = function () {
-        let indexPattern = self.indexPattern;
-        let field = self.field;
-
-        indexPattern.fields.remove({ name: field.name });
-        return indexPattern.save()
-        .then(function () {
-          notify.info('Deleted Field "' + field.name + '"');
-          redirectAway();
-        });
-      };
-
-      $scope.$watch('editor.selectedFormatId', function (cur, prev) {
-        let format = self.field.format;
-        let changedFormat = cur !== prev;
-        let missingFormat = cur && (!format || format.type.id !== cur);
-
-        if (!changedFormat || !missingFormat) return;
-
-        // reset to the defaults, but make sure it's an object
-        self.formatParams = _.assign({}, _.cloneDeep(getFieldFormatType().paramDefaults));
-      });
-
-      $scope.$watch('editor.formatParams', function () {
-        let FieldFormat = getFieldFormatType();
-        self.field.format = new FieldFormat(self.formatParams);
-      }, true);
-
-      // copy the defined properties of the field to a plain object
-      // which is mutable, and capture the changed seperately.
-      function shadowCopy(field) {
-        let changes = {};
-        let shadowProps = {
-          toActualField: {
-            // bring the shadow copy out of the shadows
-            value: function toActualField() {
-              return new Field(self.indexPattern, _.defaults({}, changes, field.$$spec));
-            }
+        getScriptingLangs().then((langs) => {
+          self.scriptingLangs = langs;
+          if (!_.includes(self.scriptingLangs, self.field.lang)) {
+            self.field.lang = undefined;
           }
+        });
+
+        self.indexPattern = $scope.getIndexPattern();
+        self.field = shadowCopy($scope.getField());
+        self.formatParams = self.field.format.params();
+        self.conflictDescriptionsLength = (self.field.conflictDescriptions) ? Object.keys(self.field.conflictDescriptions).length : 0;
+
+        // only init on first create
+        self.creating = !self.indexPattern.fields.byName[self.field.name];
+        self.existingFieldNames = self.indexPattern.fields.map(field => field.name); //used for mapping conflict validation
+        self.selectedFormatId = _.get(self.indexPattern, ['fieldFormatMap', self.field.name, 'type', 'id']);
+        self.defFormatType = initDefaultFormat();
+
+        self.cancel = redirectAway;
+        self.save = function () {
+          const indexPattern = self.indexPattern;
+          const fields = indexPattern.fields;
+          const field = self.field.toActualField();
+
+          const index = fields.findIndex(f => f.name === field.name);
+          if (index > -1) {
+            fields.splice(index, 1, field);
+          } else {
+            fields.push(field);
+          }
+
+          if (!self.selectedFormatId) {
+            indexPattern.fieldFormatMap[field.name] = {};
+          } else {
+            indexPattern.fieldFormatMap[field.name] = self.field.format;
+          }
+
+          return indexPattern.save()
+            .then(function () {
+              toastNotifications.addSuccess(`Saved '${self.field.name}'`);
+              redirectAway();
+            });
         };
 
-        Object.getOwnPropertyNames(field).forEach(function (prop) {
-          let desc = Object.getOwnPropertyDescriptor(field, prop);
-          shadowProps[prop] = {
-            enumerable: desc.enumerable,
-            get: function () {
-              return _.has(changes, prop) ? changes[prop] : field[prop];
-            },
-            set: function (v) {
-              changes[prop] = v;
-            }
+        self.delete = function () {
+          function doDelete() {
+            const indexPattern = self.indexPattern;
+            const field = self.field;
+
+            indexPattern.fields.remove({ name: field.name });
+            return indexPattern.save()
+              .then(function () {
+                toastNotifications.addSuccess(`Deleted '${self.field.name}'`);
+                redirectAway();
+              });
+          }
+          const confirmModalOptions = {
+            confirmButtonText: 'Delete',
+            onConfirm: doDelete,
+            title: `Delete field '${self.field.name}'?`
           };
+          confirmModal(
+            `You can't recover a deleted field.`,
+            confirmModalOptions
+          );
+        };
+
+        self.isDeprecatedLang = function (lang) {
+          return _.contains(getDeprecatedScriptingLanguages(), lang);
+        };
+
+        $scope.$watch('editor.selectedFormatId', function (cur, prev) {
+          const format = self.field.format;
+          const changedFormat = cur !== prev;
+          const missingFormat = cur && (!format || format.type.id !== cur);
+
+          if (!changedFormat || !missingFormat) {
+            return;
+          }
+
+          // reset to the defaults, but make sure it's an object
+          const FieldFormat = getFieldFormatType();
+          const paramDefaults = new FieldFormat({}, getConfig).getParamDefaults();
+          const currentFormatParams = self.formatParams;
+          self.formatParams = _.assign({}, _.cloneDeep(paramDefaults));
+          // If there are no current or new params, the watch will not trigger
+          // so manually update the format here
+          if (_.size(currentFormatParams) === 0 && _.size(self.formatParams) === 0) {
+            self.field.format = new FieldFormat(self.formatParams, getConfig);
+          }
         });
 
-        return Object.create(null, shadowProps);
+        $scope.$watch('editor.formatParams', function () {
+          const FieldFormat = getFieldFormatType();
+          self.field.format = new FieldFormat(self.formatParams, getConfig);
+        }, true);
+
+        $scope.$watch('editor.field.type', function (newValue) {
+          self.defFormatType = initDefaultFormat();
+          self.fieldFormatTypes = [self.defFormatType].concat(fieldFormats.byFieldType[newValue] || []);
+
+          if (_.isUndefined(_.find(self.fieldFormatTypes, { id: self.selectedFormatId }))) {
+            delete self.selectedFormatId;
+          }
+        });
+
+        $scope.$watch('editor.field.lang', function (newValue) {
+          self.fieldTypes = _.get(fieldTypesByLang, newValue, fieldTypesByLang.default);
+
+          if (!_.contains(self.fieldTypes, self.field.type)) {
+            self.field.type = _.first(self.fieldTypes);
+          }
+        });
+
+        // copy the defined properties of the field to a plain object
+        // which is mutable, and capture the changed seperately.
+        function shadowCopy(field) {
+          const changes = {};
+          const shadowProps = {
+            toActualField: {
+            // bring the shadow copy out of the shadows
+              value: function toActualField() {
+                return new Field(self.indexPattern, _.defaults({}, changes, field.$$spec));
+              }
+            }
+          };
+
+          Object.getOwnPropertyNames(field).forEach(function (prop) {
+            const desc = Object.getOwnPropertyDescriptor(field, prop);
+            shadowProps[prop] = {
+              enumerable: desc.enumerable,
+              get: function () {
+                return _.has(changes, prop) ? changes[prop] : field[prop];
+              },
+              set: function (v) {
+                changes[prop] = v;
+              }
+            };
+          });
+
+          return Object.create(null, shadowProps);
+        }
+
+        function redirectAway() {
+          kbnUrl.changeToRoute(self.indexPattern, self.field.scripted ? 'scriptedFields' : 'indexedFields');
+        }
+
+        function getFieldFormatType() {
+          if (self.selectedFormatId) return fieldFormats.getType(self.selectedFormatId);
+          else return fieldFormats.getDefaultType(self.field.type);
+        }
+
+        function getScriptingLangs() {
+          return getEnabledScriptingLanguages()
+            .then((enabledLanguages) => {
+              return _.intersection(enabledLanguages, _.union(getSupportedScriptingLanguages(), getDeprecatedScriptingLanguages()));
+            });
+        }
+
+        function initDefaultFormat() {
+          const def = Object.create(fieldFormats.getDefaultType(self.field.type));
+
+          // explicitly set to undefined to prevent inheritting the prototypes id
+          def.id = undefined;
+          def.resolvedTitle = def.title;
+          def.title = '- default - ';
+
+          return def;
+        }
       }
-
-      function redirectAway() {
-        kbnUrl.changeToRoute(self.indexPattern, self.field.scripted ? 'scriptedFields' : 'indexedFields');
-      }
-
-      function getFieldFormatType() {
-        if (self.selectedFormatId) return fieldFormats.getType(self.selectedFormatId);
-        else return fieldFormats.getDefaultType(self.field.type);
-      }
-
-      function initDefaultFormat() {
-        let def = Object.create(fieldFormats.getDefaultType(self.field.type));
-
-        // explicitly set to undefined to prevent inheritting the prototypes id
-        def.id = undefined;
-        def.resolvedTitle = def.title;
-        def.title = '- default - ';
-
-        return def;
-      }
-    }
-  };
-});
+    };
+  });

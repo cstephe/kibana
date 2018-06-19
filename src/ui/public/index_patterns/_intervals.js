@@ -1,9 +1,30 @@
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 import _ from 'lodash';
 import moment from 'moment';
-import IndexedArray from 'ui/indexed_array';
-export default function IndexNameIntervalsService(timefilter) {
+import { IndexedArray } from '../indexed_array';
+import { isNumeric } from '../utils/numeric';
 
-  let intervals = new IndexedArray({
+export function IndexPatternsIntervalsProvider(timefilter) {
+
+  const intervals = new IndexedArray({
     index: ['name'],
     initialSet: [
       {
@@ -40,10 +61,10 @@ export default function IndexNameIntervalsService(timefilter) {
     // setup the range that the list will span, return two moment objects that
     // are in proper order. a and b can be numbers to specify to go before or after now (respectively)
     // a certain number of times, based on the interval
-    let range = [[a, 'min', 'startOf'], [b, 'max', 'startOf']].map(function (v) {
+    const range = [[a, 'min', 'startOf'], [b, 'max', 'startOf']].map(function (v) {
       let val = v[0];
-      let bound = v[1];
-      let extend = v[2];
+      const bound = v[1];
+      const extend = v[2];
 
       // grab a bound from the time filter
       if (val == null) {
@@ -51,7 +72,7 @@ export default function IndexNameIntervalsService(timefilter) {
         val = bounds[bound];
       }
 
-      if (_.isNumeric(val)) val = moment().add(val, interval.name);
+      if (isNumeric(val)) val = moment().add(val, interval.name);
       else if (!moment.isMoment(val)) val = moment(val);
 
       return val.clone().utc()[extend](interval.startOf);
@@ -64,12 +85,12 @@ export default function IndexNameIntervalsService(timefilter) {
       if (!interval) throw new Error('Interval must be one of ' + _.pluck(intervals, 'name'));
     }
 
-    let indexList = [];
+    const indexList = [];
     let start = range.shift();
     // turn stop into milliseconds to that it's not constantly converted by the while condition
-    let stop = range.shift().valueOf();
+    const stop = range.shift().valueOf();
 
-    let add = sortDirection === 'desc' ? 'unshift' : 'push';
+    const add = sortDirection === 'desc' ? 'unshift' : 'push';
 
     while (start <= stop) {
       const index = start.format(format);
@@ -91,4 +112,4 @@ export default function IndexNameIntervalsService(timefilter) {
   };
 
   return intervals;
-};
+}

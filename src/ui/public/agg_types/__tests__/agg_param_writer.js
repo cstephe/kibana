@@ -1,13 +1,34 @@
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 import _ from 'lodash';
-import VisProvider from 'ui/vis';
-import AggTypesIndexProvider from 'ui/agg_types/index';
-import RegistryVisTypesProvider from 'ui/registry/vis_types';
+import { VisProvider } from '../../vis';
+import { aggTypes } from '..';
+import { VisTypesRegistryProvider } from '../../registry/vis_types';
 import FixturesStubbedLogstashIndexPatternProvider from 'fixtures/stubbed_logstash_index_pattern';
-module.exports = function AggParamWriterHelper(Private) {
-  let Vis = Private(VisProvider);
-  let aggTypes = Private(AggTypesIndexProvider);
-  let visTypes = Private(RegistryVisTypesProvider);
-  let stubbedLogstashIndexPattern = Private(FixturesStubbedLogstashIndexPatternProvider);
+import { AggConfig } from '../../vis/agg_config';
+
+// eslint-disable-next-line @elastic/kibana-custom/no-default-export
+export default function AggParamWriterHelper(Private) {
+  const Vis = Private(VisProvider);
+  const visTypes = Private(VisTypesRegistryProvider);
+  const stubbedLogstashIndexPattern = Private(FixturesStubbedLogstashIndexPatternProvider);
 
   /**
    * Helper object for writing aggParams. Specify an aggType and it will find a vis & schema, and
@@ -29,7 +50,7 @@ module.exports = function AggParamWriterHelper(Private) {
    * @param {string} opts.aggType - the name of the aggType we want to test. ('histogram', 'filter', etc.)
    */
   function AggParamWriter(opts) {
-    let self = this;
+    const self = this;
 
     self.aggType = opts.aggType;
     if (_.isString(self.aggType)) {
@@ -47,7 +68,7 @@ module.exports = function AggParamWriterHelper(Private) {
 
     // find a suitable vis type and schema
     _.find(visTypes, function (visType) {
-      let schema = _.find(visType.schemas.all, function (schema) {
+      const schema = _.find(visType.schemas.all, function (schema) {
         // type, type, type, type, type... :(
         return schema.group === self.aggType.type;
       });
@@ -64,12 +85,12 @@ module.exports = function AggParamWriterHelper(Private) {
     }
 
     self.vis = new Vis(self.indexPattern, {
-      type: self.visType
+      type: self.visType.name
     });
   }
 
   AggParamWriter.prototype.write = function (paramValues) {
-    let self = this;
+    const self = this;
     paramValues = _.clone(paramValues);
 
     if (self.aggType.params.byName.field && !paramValues.field) {
@@ -77,27 +98,30 @@ module.exports = function AggParamWriterHelper(Private) {
       if (self.aggType.type === 'metrics') {
         paramValues.field = _.sample(self.indexPattern.fields.byType.number);
       } else {
-        paramValues.field = _.sample(self.indexPattern.fields.byType.string);
+        const type = self.aggType.params.byName.field.filterFieldTypes || 'string';
+        let field;
+        do {
+          field = _.sample(self.indexPattern.fields.byType[type]);
+        } while (!field.aggregatable);
+        paramValues.field = field.name;
       }
     }
 
+
+    const agg = new AggConfig(self.vis, {
+      id: 1,
+      schema: self.visAggSchema.name,
+      type: self.aggType.name,
+      params: paramValues
+    });
+
     self.vis.setState({
       type: self.vis.type.name,
-      aggs: [{
-        type: self.aggType,
-        schema: self.visAggSchema,
-        params: paramValues
-      }]
+      aggs: [agg.toJSON()]
     });
 
-    let aggConfig = _.find(self.vis.aggs, function (aggConfig) {
+    const aggConfig = _.find(self.vis.aggs, function (aggConfig) {
       return aggConfig.type === self.aggType;
-    });
-
-    aggConfig.type.params.forEach(function (param) {
-      if (param.onRequest) {
-        param.onRequest(aggConfig);
-      }
     });
 
     return aggConfig.type.params.write(aggConfig);
@@ -105,4 +129,4 @@ module.exports = function AggParamWriterHelper(Private) {
 
   return AggParamWriter;
 
-};
+}

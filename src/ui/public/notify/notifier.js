@@ -1,26 +1,47 @@
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+import React from 'react';
 import _ from 'lodash';
-import $ from 'jquery';
-import metadata from 'ui/metadata';
-import formatMsg from 'ui/notify/lib/_format_msg';
-import fatalSplashScreen from 'ui/notify/partials/fatal_splash_screen.html';
-/* eslint no-console: 0 */
+import angular from 'angular';
+import MarkdownIt from 'markdown-it';
+import { metadata } from '../metadata';
+import { formatMsg, formatStack } from './lib';
+import { fatalError } from './fatal_error';
+import { banners } from './banners';
+import '../render_directive';
 
-let notifs = [];
-let version = metadata.version;
-let buildNum = metadata.buildNum;
-let consoleGroups = ('group' in window.console) && ('groupCollapsed' in window.console) && ('groupEnd' in window.console);
+import {
+  EuiCallOut,
+  EuiButton,
+} from '@elastic/eui';
 
-let log = _.bindKey(console, 'log');
+const notifs = [];
 
-// used to identify the first call to fatal, set to false there
-let firstFatal = true;
+const {
+  version,
+  buildNum,
+} = metadata;
 
-let fatalToastTemplate = (function lazyTemplate(tmpl) {
-  let compiled;
-  return function (vars) {
-    return (compiled || (compiled = _.template(tmpl)))(vars);
-  };
-}(require('ui/notify/partials/fatal.html')));
+const consoleGroups = ('group' in window.console) && ('groupCollapsed' in window.console) && ('groupEnd' in window.console);
+
+const log = _.bindKey(console, 'log');
 
 function now() {
   if (window.performance && window.performance.now) {
@@ -32,7 +53,7 @@ function now() {
 function closeNotif(notif, cb = _.noop, key) {
   return function () {
     // this === notif
-    let i = notifs.indexOf(notif);
+    const i = notifs.indexOf(notif);
     if (i !== -1) notifs.splice(i, 1);
 
     cancelTimer(notif);
@@ -61,7 +82,7 @@ function timerCanceler(notif, cb = _.noop, key) {
 function startNotifTimer(notif, cb) {
   const interval = 1000;
 
-  if (notif.lifetime === Infinity) {
+  if (notif.lifetime === Infinity || notif.lifetime === 0) {
     return;
   }
 
@@ -70,7 +91,7 @@ function startNotifTimer(notif, cb) {
   notif.timerId = Notifier.config.setInterval(function () {
     notif.timeRemaining -= 1;
 
-    if (notif.timeRemaining === 0) {
+    if (notif.timeRemaining <= 0) {
       closeNotif(notif, cb, 'ignore')();
     }
   }, interval, notif.timeRemaining);
@@ -83,6 +104,25 @@ function restartNotifTimer(notif, cb) {
   startNotifTimer(notif, cb);
 }
 
+const typeToButtonClassMap = {
+  danger: 'kuiButton--danger', // NOTE: `error` type is internally named as `danger`
+  warning: 'kuiButton--warning',
+  info: 'kuiButton--primary',
+};
+const buttonHierarchyClass = (index) => {
+  if (index === 0) {
+    // first action: primary className
+    return 'kuiButton--primary';
+  }
+  // subsequent actions: secondary/default className
+  return 'kuiButton--basic';
+};
+const typeToAlertClassMap = {
+  danger: `alert-danger`,
+  warning: `alert-warning`,
+  info: `alert-info`,
+};
+
 function add(notif, cb) {
   _.set(notif, 'info.version', version);
   _.set(notif, 'info.buildNum', buildNum);
@@ -93,6 +133,19 @@ function add(notif, cb) {
     notif.actions.forEach(function (action) {
       notif[action] = closeNotif(notif, cb, action);
     });
+  } else if (notif.customActions) {
+    // wrap all of the custom functions in a close
+    notif.customActions = notif.customActions.map((action, index) => {
+      return {
+        key: action.text,
+        dataTestSubj: action.dataTestSubj,
+        callback: closeNotif(notif, action.callback, action.text),
+        getButtonClass() {
+          const buttonTypeClass = typeToButtonClassMap[notif.type];
+          return `${buttonHierarchyClass(index)} ${buttonTypeClass}`;
+        }
+      };
+    });
   }
 
   notif.count = (notif.count || 0) + 1;
@@ -101,9 +154,20 @@ function add(notif, cb) {
     return notif.timerId ? true : false;
   };
 
-  let dup = _.find(notifs, function (item) {
-    return item.content === notif.content && item.lifetime === notif.lifetime;
-  });
+  // decorate the notification with helper functions for the template
+  notif.getButtonClass = () => typeToButtonClassMap[notif.type];
+  notif.getAlertClassStack = () => `toast-stack alert ${typeToAlertClassMap[notif.type]}`;
+  notif.getIconClass = () => `fa fa-${notif.icon}`;
+  notif.getToastMessageClass = ()  => 'toast-message';
+  notif.getAlertClass = () => `toast alert ${typeToAlertClassMap[notif.type]}`;
+  notif.getButtonGroupClass = () => 'toast-controls';
+
+  let dup = null;
+  if (notif.content) {
+    dup = _.find(notifs, function (item) {
+      return item.content === notif.content && item.lifetime === notif.lifetime;
+    });
+  }
 
   if (dup) {
     dup.count += 1;
@@ -121,53 +185,27 @@ function add(notif, cb) {
   return notif;
 }
 
-function set(opts, cb) {
-  if (this._sovereignNotif) {
-    this._sovereignNotif.clear();
-  }
-  if (!opts.content && !opts.markdown) {
-    return null;
-  }
-  this._sovereignNotif = add(opts, cb);
-  return this._sovereignNotif;
-}
-
 Notifier.prototype.add = add;
-Notifier.prototype.set = set;
-
-function formatInfo() {
-  let info = [];
-
-  if (!_.isUndefined(version)) {
-    info.push(`Version: ${version}`);
-  }
-
-  if (!_.isUndefined(buildNum)) {
-    info.push(`Build: ${buildNum}`);
-  }
-
-  return info.join('\n');
-}
-
-// browsers format Error.stack differently; always include message
-function formatStack(err) {
-  if (err.stack && !~err.stack.indexOf(err.message)) {
-    return 'Error: ' + err.message + '\n' + err.stack;
-  }
-  return err.stack;
-}
 
 /**
  * Functionality to check that
  */
-function Notifier(opts) {
-  let self = this;
+export function Notifier(opts) {
+  const self = this;
   opts = opts || {};
 
   // label type thing to say where notifications came from
   self.from = opts.location;
 
-  'event lifecycle timed fatal error warning info banner'.split(' ').forEach(function (m) {
+  const notificationLevels = [
+    'event',
+    'lifecycle',
+    'timed',
+    'error',
+    'warning',
+  ];
+
+  notificationLevels.forEach(function (m) {
     self[m] = _.bind(self[m], self);
   });
 }
@@ -185,8 +223,32 @@ Notifier.applyConfig = function (config) {
   _.merge(Notifier.config, config);
 };
 
-// to be notified when the first fatal error occurs, push a function into this array.
-Notifier.fatalCallbacks = [];
+// "Constants"
+Notifier.QS_PARAM_MESSAGE = 'notif_msg';
+Notifier.QS_PARAM_LEVEL = 'notif_lvl';
+Notifier.QS_PARAM_LOCATION = 'notif_loc';
+
+Notifier.pullMessageFromUrl = ($location) => {
+  const queryString = $location.search();
+  if (!queryString.notif_msg) {
+    return;
+  }
+  const message = queryString[Notifier.QS_PARAM_MESSAGE];
+  const config = queryString[Notifier.QS_PARAM_LOCATION] ? { location: queryString[Notifier.QS_PARAM_LOCATION] } : {};
+  const level = queryString[Notifier.QS_PARAM_LEVEL] || 'info';
+
+  $location.search(Notifier.QS_PARAM_MESSAGE, null);
+  $location.search(Notifier.QS_PARAM_LOCATION, null);
+  $location.search(Notifier.QS_PARAM_LEVEL, null);
+
+  const notifier = new Notifier(config);
+
+  if (level === 'fatal') {
+    fatalError(message);
+  } else {
+    notifier[level](message);
+  }
+};
 
 // simply a pointer to the global notif list
 Notifier.prototype._notifs = notifs;
@@ -217,7 +279,7 @@ Notifier.prototype.lifecycle = createGroupLogger('lifecycle', {
  * @return {function} - the wrapped function
  */
 Notifier.prototype.timed = function (name, fn) {
-  let self = this;
+  const self = this;
 
   if (typeof name === 'function') {
     fn = name;
@@ -225,8 +287,8 @@ Notifier.prototype.timed = function (name, fn) {
   }
 
   return function WrappedNotifierFunction() {
-    let cntx = this;
-    let args = arguments;
+    const cntx = this;
+    const args = arguments;
 
     return self.event(name, function () {
       return fn.apply(cntx, args);
@@ -234,62 +296,20 @@ Notifier.prototype.timed = function (name, fn) {
   };
 };
 
-/**
- * Kill the page, display an error, then throw the error.
- * Used as a last-resort error back in many promise chains
- * so it rethrows the error that's displayed on the page.
- *
- * @param  {Error} err - The error that occured
- */
-Notifier.prototype.fatal = function (err) {
-  this._showFatal(err);
-  throw err;
-};
-
-/**
- * Display an error that destroys the entire app. Broken out so that
- * global error handlers can display fatal errors without throwing another
- * error like in #fatal()
- *
- * @param  {Error} err - The fatal error that occured
- */
-Notifier.prototype._showFatal = function (err) {
-  if (firstFatal) {
-    _.callEach(Notifier.fatalCallbacks);
-    firstFatal = false;
-    window.addEventListener('hashchange', function () {
-      window.location.reload();
-    });
-  }
-
-  let html = fatalToastTemplate({
-    info: formatInfo(),
-    msg: formatMsg(err, this.from),
-    stack: formatStack(err)
-  });
-
-  let $container = $('#fatal-splash-screen');
-
-  if (!$container.size()) {
-    $(document.body)
-      // in case the app has not completed boot
-    .removeAttr('ng-cloak')
-    .html(fatalSplashScreen);
-
-    $container = $('#fatal-splash-screen');
-  }
-
-  $container.append(html);
-  console.error(err.stack);
-};
+const overrideableOptions = ['lifetime', 'icon'];
 
 /**
  * Alert the user of an error that occured
  * @param  {Error|String} err
  * @param  {Function} cb
  */
-Notifier.prototype.error = function (err, cb) {
-  return add({
+Notifier.prototype.error = function (err, opts, cb) {
+  if (_.isFunction(opts)) {
+    cb = opts;
+    opts = {};
+  }
+
+  const config = _.assign({
     type: 'danger',
     content: formatMsg(err, this.from),
     icon: 'warning',
@@ -297,7 +317,8 @@ Notifier.prototype.error = function (err, cb) {
     lifetime: Notifier.config.errorLifetime,
     actions: ['report', 'accept'],
     stack: formatStack(err)
-  }, cb);
+  }, _.pick(opts, overrideableOptions));
+  return add(config, cb);
 };
 
 /**
@@ -305,46 +326,200 @@ Notifier.prototype.error = function (err, cb) {
  * @param  {String} msg
  * @param  {Function} cb
  */
-Notifier.prototype.warning = function (msg, cb) {
-  return add({
+Notifier.prototype.warning = function (msg, opts, cb) {
+  if (_.isFunction(opts)) {
+    cb = opts;
+    opts = {};
+  }
+
+  const config = _.assign({
     type: 'warning',
     content: formatMsg(msg, this.from),
     icon: 'warning',
     title: 'Warning',
     lifetime: Notifier.config.warningLifetime,
     actions: ['accept']
-  }, cb);
-};
-
-/**
- * Display a debug message
- * @param  {String} msg
- * @param  {Function} cb
- */
-Notifier.prototype.info = function (msg, cb) {
-  return add({
-    type: 'info',
-    content: formatMsg(msg, this.from),
-    icon: 'info-circle',
-    title: 'Debug',
-    lifetime: Notifier.config.infoLifetime,
-    actions: ['accept']
-  }, cb);
+  }, _.pick(opts, overrideableOptions));
+  return add(config, cb);
 };
 
 /**
  * Display a banner message
- * @param  {String} msg
- * @param  {Function} cb
+ * @param  {String} content
+ * @param  {String} name
  */
-Notifier.prototype.banner = function (msg, cb) {
-  return this.set({
-    type: 'banner',
-    title: 'Attention',
-    markdown: formatMsg(msg, this.from),
-    lifetime: Notifier.config.bannerLifetime,
-    actions: ['accept']
-  }, cb);
+let bannerId;
+let bannerTimeoutId;
+Notifier.prototype.banner = function (content = '', name = '') {
+  const BANNER_PRIORITY = 100;
+
+  const dismissBanner = () => {
+    banners.remove(bannerId);
+    clearTimeout(bannerTimeoutId);
+  };
+
+  const markdownIt = new MarkdownIt({
+    html: false,
+    linkify: true
+  });
+
+  const banner = (
+    <EuiCallOut
+      title="Attention"
+      iconType="help"
+    >
+      <div
+        /*
+         * Justification for dangerouslySetInnerHTML:
+         * The notifier relies on `markdown-it` to produce safe and correct HTML.
+         */
+        dangerouslySetInnerHTML={{ __html: markdownIt.render(content) }} //eslint-disable-line react/no-danger
+        data-test-subj={name ? `banner-${name}` : null}
+      />
+
+      <EuiButton type="primary" size="s" onClick={dismissBanner}>
+        Dismiss
+      </EuiButton>
+    </EuiCallOut>
+  );
+
+  bannerId = banners.set({
+    component: banner,
+    id: bannerId,
+    priority: BANNER_PRIORITY,
+  });
+
+  clearTimeout(bannerTimeoutId);
+  bannerTimeoutId = setTimeout(() => {
+    dismissBanner();
+  }, Notifier.config.bannerLifetime);
+};
+
+/**
+ * Helper for common behavior in custom and directive types
+ */
+function getDecoratedCustomConfig(config) {
+  // There is no helper condition that will allow for 2 parameters, as the
+  // other methods have. So check that config is an object
+  if (!_.isPlainObject(config)) {
+    throw new Error('Config param is required, and must be an object');
+  }
+
+  // workaround to allow callers to send `config.type` as `error` instead of
+  // reveal internal implementation that error notifications use a `danger`
+  // style
+  if (config.type === 'error') {
+    config.type = 'danger';
+  }
+
+  const getLifetime = (type) => {
+    switch (type) {
+      case 'warning':
+        return Notifier.config.warningLifetime;
+      case 'danger':
+        return Notifier.config.errorLifetime;
+      default: // info
+        return Notifier.config.infoLifetime;
+    }
+  };
+
+  const customConfig = _.assign({
+    type: 'info',
+    title: 'Notification',
+    lifetime: getLifetime(config.type)
+  }, config);
+
+  const hasActions = _.get(customConfig, 'actions.length');
+  if (hasActions) {
+    customConfig.customActions = customConfig.actions;
+    delete customConfig.actions;
+  } else {
+    customConfig.actions = ['accept'];
+  }
+
+  return customConfig;
+}
+
+/**
+ * Display a custom message
+ * @param  {String} msg - required
+ * @param  {Object} config - required
+ * @param  {Function} cb - optional
+ *
+ * config = {
+ *   title: 'Some Title here',
+ *   type: 'info',
+ *   actions: [{
+ *     text: 'next',
+ *     callback: function() { next(); }
+ *   }, {
+ *     text: 'prev',
+ *     callback: function() { prev(); }
+ *   }]
+ * }
+ */
+Notifier.prototype.custom = function (msg, config, cb) {
+  const customConfig = getDecoratedCustomConfig(config);
+  customConfig.content = formatMsg(msg, this.from);
+  return add(customConfig, cb);
+};
+
+/**
+ * Display a scope-bound directive using template rendering in the message area
+ * @param  {Object} directive - required
+ * @param  {Object} config - required
+ * @param  {Function} cb - optional
+ *
+ * directive = {
+ *  template: `<p>Hello World! <a ng-click="example.clickHandler()">Click me</a>.`,
+ *  controllerAs: 'example',
+ *  controller() {
+ *    this.clickHandler = () {
+ *      // do something
+ *    };
+ *  }
+ * }
+ *
+ * config = {
+ *   title: 'Some Title here',
+ *   type: 'info',
+ *   actions: [{
+ *     text: 'next',
+ *     callback: function() { next(); }
+ *   }, {
+ *     text: 'prev',
+ *     callback: function() { prev(); }
+ *   }]
+ * }
+ */
+Notifier.prototype.directive = function (directive, config, cb) {
+  if (!_.isPlainObject(directive)) {
+    throw new Error('Directive param is required, and must be an object');
+  }
+  if (!Notifier.$compile) {
+    throw new Error('Unable to use the directive notification until Angular has initialized.');
+  }
+  if (directive.scope) {
+    throw new Error('Directive should not have a scope definition. Notifier has an internal implementation.');
+  }
+  if (directive.link) {
+    throw new Error('Directive should not have a link function. Notifier has an internal link function helper.');
+  }
+
+  // make a local copy of the directive param (helps unit tests)
+  const localDirective = _.clone(directive, true);
+
+  localDirective.scope = { notif: '=' };
+  localDirective.link = function link($scope, $el) {
+    const $template = angular.element($scope.notif.directive.template);
+    const postLinkFunction = Notifier.$compile($template);
+    $el.html($template);
+    postLinkFunction($scope);
+  };
+
+  const customConfig = getDecoratedCustomConfig(config);
+  customConfig.directive = localDirective;
+  return add(customConfig, cb);
 };
 
 Notifier.prototype.describeError = formatMsg.describeError;
@@ -353,7 +528,7 @@ if (log === _.noop) {
   Notifier.prototype.log = _.noop;
 } else {
   Notifier.prototype.log = function () {
-    let args = [].slice.apply(arguments);
+    const args = [].slice.apply(arguments);
     if (this.from) args.unshift(this.from + ':');
     log.apply(null, args);
   };
@@ -362,15 +537,15 @@ if (log === _.noop) {
 // general functionality used by .event() and .lifecycle()
 function createGroupLogger(type, opts) {
   // Track the groups managed by this logger
-  let groups = window[type + 'Groups'] = {};
+  const groups = window[type + 'Groups'] = {};
 
   return function logger(name, success) {
     let status; // status of the timer
     let exec; // function to execute and wrap
     let ret; // return value
 
-    let complete = function (val) { logger(name, true); return val; };
-    let failure = function (err) { logger(name, false); throw err; };
+    const complete = function (val) { logger(name, true); return val; };
+    const failure = function (err) { logger(name, false); throw err; };
 
     if (typeof success === 'function' || success === void 0) {
       // start
@@ -386,7 +561,7 @@ function createGroupLogger(type, opts) {
     }
     else {
       groups[name] = now() - (groups[name] || 0);
-      let time = ' in ' + groups[name].toFixed(2) + 'ms';
+      const time = ' in ' + groups[name].toFixed(2) + 'ms';
 
       // end
       if (success) {
@@ -399,13 +574,13 @@ function createGroupLogger(type, opts) {
 
     if (consoleGroups) {
       if (status) {
-        console.log(status);
-        console.groupEnd();
+        console.log(status); // eslint-disable-line no-console
+        console.groupEnd(); // eslint-disable-line no-console
       } else {
         if (opts.open) {
-          console.group(name);
+          console.group(name); // eslint-disable-line no-console
         } else {
-          console.groupCollapsed(name);
+          console.groupCollapsed(name); // eslint-disable-line no-console
         }
       }
     } else {
@@ -439,4 +614,3 @@ function createGroupLogger(type, opts) {
   };
 }
 
-export default Notifier;

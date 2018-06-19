@@ -1,109 +1,76 @@
-import {
-  bdd,
-  common,
-  scenarioManager,
-  settingsPage,
-  esClient
-} from '../../../support';
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 
-var expect = require('expect.js');
+import expect from 'expect.js';
 
-bdd.describe('index result popularity', function describeIndexTests() {
-  bdd.before(function () {
-    // delete .kibana index and then wait for Kibana to re-create it
-    return esClient.deleteAndUpdateConfigDoc()
-    .then(function () {
-      return settingsPage.navigateTo();
+export default function ({ getService, getPageObjects }) {
+  const kibanaServer = getService('kibanaServer');
+  const log = getService('log');
+  const PageObjects = getPageObjects(['settings', 'common']);
+
+  describe('index result popularity', function describeIndexTests() {
+    const fieldName = 'geo.coordinates';
+    before(async function () {
+      // delete .kibana index and then wait for Kibana to re-create it
+      await kibanaServer.uiSettings.replace({});
+      await PageObjects.settings.navigateTo();
+
     });
-  });
 
-  bdd.beforeEach(function be() {
-    return settingsPage.createIndexPattern();
-  });
-
-  bdd.afterEach(function ae() {
-    return settingsPage.removeIndexPattern();
-  });
-
-  bdd.describe('change popularity', function indexPatternCreation() {
-    var fieldName = 'geo.coordinates';
-
-    // set the page size to All again, https://github.com/elastic/kibana/issues/5030
-    // TODO: remove this after issue #5030 is closed
-    function fix5030() {
-      return settingsPage.setPageSize('All')
-      .then(function () {
-        return common.sleep(1000);
-      });
-    }
-
-    bdd.beforeEach(function () {
+    beforeEach(async () => {
+      await PageObjects.settings.createIndexPattern();
       // increase Popularity of geo.coordinates
-      return settingsPage.setPageSize('All')
-      .then(function () {
-        return common.sleep(1000);
-      })
-      .then(function openControlsByName() {
-        common.debug('Starting openControlsByName (' + fieldName + ')');
-        return settingsPage.openControlsByName(fieldName);
-      })
-      .then(function increasePopularity() {
-        common.debug('increasePopularity');
-        return settingsPage.increasePopularity();
-      });
+      log.debug('Starting openControlsByName (' + fieldName + ')');
+      await PageObjects.settings.openControlsByName(fieldName);
+      log.debug('increasePopularity');
+      await PageObjects.settings.increasePopularity();
     });
 
-    bdd.afterEach(function () {
+    afterEach(async () =>  {
+      await PageObjects.settings.controlChangeCancel();
+      await PageObjects.settings.removeIndexPattern();
       // Cancel saving the popularity change (we didn't make a change in this case, just checking the value)
-      return settingsPage.controlChangeCancel();
     });
 
-    bdd.it('should update the popularity input', function () {
-      return settingsPage.getPopularity()
-      .then(function (popularity) {
-        common.debug('popularity = ' + popularity);
-        expect(popularity).to.be('1');
-        common.saveScreenshot('Settings-indices-result-popularity-updated');
-      });
+    it('should update the popularity input', async function () {
+      const popularity = await PageObjects.settings.getPopularity();
+      log.debug('popularity = ' + popularity);
+      expect(popularity).to.be('1');
     });
 
-    bdd.it('should be reset on cancel', function pageHeader() {
+    it('should be reset on cancel', async function () {
       // Cancel saving the popularity change
-      return settingsPage.controlChangeCancel()
-      .then(function () {
-        return fix5030();
-      })
-      .then(function openControlsByName() {
-        return settingsPage.openControlsByName(fieldName);
-      })
-      // check that its 0 (previous increase was cancelled)
-      .then(function getPopularity() {
-        return settingsPage.getPopularity();
-      })
-      .then(function (popularity) {
-        common.debug('popularity = ' + popularity);
-        expect(popularity).to.be('0');
-      });
+      await PageObjects.settings.controlChangeCancel();
+      await PageObjects.settings.openControlsByName(fieldName);
+      // check that it is 0 (previous increase was cancelled
+      const popularity = await PageObjects.settings.getPopularity();
+      log.debug('popularity = ' + popularity);
+      expect(popularity).to.be('0');
     });
 
-    bdd.it('can be saved', function pageHeader() {
+    it('can be saved', async function () {
       // Saving the popularity change
-      return settingsPage.controlChangeSave()
-      .then(function () {
-        return fix5030();
-      })
-      .then(function openControlsByName() {
-        return settingsPage.openControlsByName(fieldName);
-      })
-      // check that its 0 (previous increase was cancelled)
-      .then(function getPopularity() {
-        return settingsPage.getPopularity();
-      })
-      .then(function (popularity) {
-        common.debug('popularity = ' + popularity);
-        expect(popularity).to.be('1');
-        common.saveScreenshot('Settings-indices-result-popularity-saved');
-      });
+      await PageObjects.settings.controlChangeSave();
+      await PageObjects.settings.openControlsByName(fieldName);
+      const popularity = await PageObjects.settings.getPopularity();
+      log.debug('popularity = ' + popularity);
+      expect(popularity).to.be('1');
     });
   }); // end 'change popularity'
-}); // end index result popularity
+}

@@ -1,13 +1,45 @@
-import _ from 'lodash';
-import $ from 'jquery';
-import modules from 'ui/modules';
-import errors from 'ui/notify/errors';
-import Notifier from 'ui/notify/notifier';
-import 'ui/notify/directives';
-import chrome from 'ui/chrome';
-import { kbnIndex } from 'ui/metadata';
-let module = modules.get('kibana/notify');
-let rootNotifier = new Notifier();
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+import { uiModules } from '../modules';
+import { fatalError } from './fatal_error';
+import { Notifier } from './notifier';
+import { metadata } from '../metadata';
+import template from './partials/toaster.html';
+import './notify.less';
+import '../filters/markdown';
+import '../directives/truncated';
+
+const module = uiModules.get('kibana/notify');
+
+module.directive('kbnNotifications', function () {
+  return {
+    restrict: 'E',
+    scope: {
+      list: '=list'
+    },
+    replace: true,
+    template
+  };
+});
+
+export const notify = new Notifier();
 
 module.factory('createNotifier', function () {
   return function (opts) {
@@ -20,17 +52,18 @@ module.factory('Notifier', function () {
 });
 
 // teach Notifier how to use angular interval services
-module.run(function (config, $interval) {
+module.run(function (config, $interval, $compile) {
   Notifier.applyConfig({
     setInterval: $interval,
     clearInterval: $interval.cancel
   });
   applyConfig(config);
+  Notifier.$compile = $compile;
 });
 
 // if kibana is not included then the notify service can't
 // expect access to config (since it's dependent on kibana)
-if (!!kbnIndex) {
+if (!!metadata.kbnIndex) {
   require('ui/config');
   module.run(function (config) {
     config.watchAll(() => applyConfig(config));
@@ -44,22 +77,26 @@ function applyConfig(config) {
     warningLifetime: config.get('notifications:lifetime:warning'),
     infoLifetime: config.get('notifications:lifetime:info')
   });
-  rootNotifier.banner(config.get('notifications:banner'));
+
+  const banner = config.get('notifications:banner');
+
+  if (typeof banner === 'string' && banner.trim()) {
+    notify.banner(banner, 'notifications:banner');
+  }
 }
 
 window.onerror = function (err, url, line) {
-  rootNotifier.fatal(new Error(err + ' (' + url + ':' + line + ')'));
+  fatalError(new Error(`${err} (${url}:${line})`));
   return true;
 };
 
 if (window.addEventListener) {
-  const notify = new Notifier({
+  const notifier = new Notifier({
     location: 'Promise'
   });
 
   window.addEventListener('unhandledrejection', function (e) {
-    notify.log(`Detected an unhandled Promise rejection.\n${e.reason}`);
+    notifier.log(`Detected an unhandled Promise rejection.\n${e.reason}`);
   });
 }
 
-export default rootNotifier;

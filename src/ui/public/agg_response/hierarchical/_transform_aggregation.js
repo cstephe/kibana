@@ -1,17 +1,38 @@
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 import _ from 'lodash';
-import extractBuckets from 'ui/agg_response/hierarchical/_extract_buckets';
-import AggConfigResult from 'ui/vis/agg_config_result';
-export default function transformAggregationProvider(Private) {
+import { extractBuckets } from './_extract_buckets';
+import AggConfigResult from '../../vis/agg_config_result';
+
+export function HierarchicalTransformAggregationProvider() {
   return function transformAggregation(agg, metric, aggData, parent) {
     return _.map(extractBuckets(aggData, agg), function (bucket) {
-      let aggConfigResult = new AggConfigResult(
+      const aggConfigResult = new AggConfigResult(
         agg,
         parent && parent.aggConfigResult,
         metric.getValue(bucket),
-        agg.getKey(bucket)
+        agg.getKey(bucket),
+        bucket.filters
       );
 
-      let branch = {
+      const branch = {
         name: agg.fieldFormatter()(bucket.key),
         size: aggConfigResult.value,
         aggConfig: agg,
@@ -27,7 +48,7 @@ export default function transformAggregationProvider(Private) {
       // If the next bucket exists and it has children the we need to
       // transform it as well. This is where the recursion happens.
       if (agg._next) {
-        let nextBucket = bucket[agg._next.id];
+        const nextBucket = bucket[agg._next.id];
         if (nextBucket && nextBucket.buckets) {
           branch.children = transformAggregation(agg._next, metric, nextBucket, branch);
         }
@@ -36,4 +57,4 @@ export default function transformAggregationProvider(Private) {
       return branch;
     });
   };
-};
+}

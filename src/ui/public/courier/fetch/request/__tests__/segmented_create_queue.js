@@ -1,15 +1,32 @@
-import sinon from 'auto-release-sinon';
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+import sinon from 'sinon';
 import expect from 'expect.js';
 import ngMock from 'ng_mock';
 
 import StubbedSearchSourceProvider from 'fixtures/stubbed_search_source';
 
-import SegmentedRequestProvider from '../segmented';
+import { SegmentedRequestProvider } from '../segmented';
 
 describe('ui/courier/fetch/request/segmented/_createQueue', () => {
-
   let Promise;
-  let $rootScope;
   let SegmentedReq;
   let MockSource;
 
@@ -18,7 +35,6 @@ describe('ui/courier/fetch/request/segmented/_createQueue', () => {
   beforeEach(ngMock.module('kibana'));
   beforeEach(ngMock.inject((Private, $injector) => {
     Promise = $injector.get('Promise');
-    $rootScope = $injector.get('$rootScope');
     SegmentedReq = Private(SegmentedRequestProvider);
 
     MockSource = class {
@@ -41,7 +57,7 @@ describe('ui/courier/fetch/request/segmented/_createQueue', () => {
   it('relies on indexPattern.toDetailedIndexList to generate queue', async function () {
     const source = new MockSource();
     const ip = source.get('index');
-    const indices = [1,2,3];
+    const indices = [1, 2, 3];
     sinon.stub(ip, 'toDetailedIndexList').returns(Promise.resolve(indices));
 
     const req = new SegmentedReq(source);
@@ -53,7 +69,7 @@ describe('ui/courier/fetch/request/segmented/_createQueue', () => {
     const source = new MockSource();
     const ip = source.get('index');
     const req = new SegmentedReq(source);
-    sinon.stub(ip, 'toDetailedIndexList').returns(Promise.resolve([1,2,3]));
+    sinon.stub(ip, 'toDetailedIndexList').returns(Promise.resolve([1, 2, 3]));
 
     req.setDirection('asc');
     await req._createQueue();

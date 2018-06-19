@@ -1,39 +1,58 @@
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 import _ from 'lodash';
-import extractBuckets from 'ui/agg_response/hierarchical/_extract_buckets';
-import createRawData from 'ui/agg_response/hierarchical/_create_raw_data';
-import arrayToLinkedList from 'ui/agg_response/hierarchical/_array_to_linked_list';
-import AggConfigResult from 'ui/vis/agg_config_result';
-import AggResponseHierarchicalBuildSplitProvider from 'ui/agg_response/hierarchical/_build_split';
-import AggResponseHierarchicalHierarchicalTooltipFormatterProvider from 'ui/agg_response/hierarchical/_hierarchical_tooltip_formatter';
-export default function buildHierarchicalDataProvider(Private, Notifier) {
-  let buildSplit = Private(AggResponseHierarchicalBuildSplitProvider);
-  let tooltipFormatter = Private(AggResponseHierarchicalHierarchicalTooltipFormatterProvider);
+import { extractBuckets } from './_extract_buckets';
+import { createRawData } from './_create_raw_data';
+import { arrayToLinkedList } from './_array_to_linked_list';
+import AggConfigResult from '../../vis/agg_config_result';
+import { AggResponseHierarchicalBuildSplitProvider } from './_build_split';
+import { HierarchicalTooltipFormatterProvider } from './_hierarchical_tooltip_formatter';
+
+export function BuildHierarchicalDataProvider(Private, Notifier) {
+  const buildSplit = Private(AggResponseHierarchicalBuildSplitProvider);
+  const tooltipFormatter = Private(HierarchicalTooltipFormatterProvider);
 
 
-  let notify = new Notifier({
+  const notify = new Notifier({
     location: 'Pie chart response converter'
   });
 
   return function (vis, resp) {
     // Create a refrenece to the buckets
-    let buckets = vis.aggs.bySchemaGroup.buckets;
-
+    let buckets = vis.getAggConfig().bySchemaGroup.buckets;
 
     // Find the metric so it's easier to reference.
     // TODO: Change this to support multiple metrics.
-    let metric = vis.aggs.bySchemaGroup.metrics[0];
+    const metric = vis.getAggConfig().bySchemaGroup.metrics[0];
 
     // Link each agg to the next agg. This will be
     // to identify the next bucket aggregation
     buckets = arrayToLinkedList(buckets);
 
     // Create the raw data to be used in the spy panel
-    let raw = createRawData(vis, resp);
+    const raw = createRawData(vis, resp);
 
     // If buckets is falsy then we should just return the aggs
     if (!buckets) {
-      let label = 'Count';
-      let value = resp.aggregations
+      const label = raw.columns[0].label;
+      const value = resp.aggregations
         && resp.aggregations[metric.id]
         && resp.aggregations[metric.id].value
         || resp.hits.total;
@@ -50,8 +69,8 @@ export default function buildHierarchicalDataProvider(Private, Notifier) {
       };
     }
 
-    let firstAgg = buckets[0];
-    let aggData = resp.aggregations[firstAgg.id];
+    const firstAgg = buckets[0];
+    const aggData = resp.aggregations ? resp.aggregations[firstAgg.id] : null;
 
     if (!firstAgg._next && firstAgg.schema.name === 'split') {
       notify.error('Splitting charts without splitting slices is not supported. Pretending that we are just splitting slices.');
@@ -59,7 +78,7 @@ export default function buildHierarchicalDataProvider(Private, Notifier) {
 
     // start with splitting slices
     if (!firstAgg._next || firstAgg.schema.name === 'segment') {
-      let split = buildSplit(firstAgg, metric, aggData);
+      const split = buildSplit(firstAgg, metric, aggData);
       split.hits = resp.hits.total;
       split.raw = raw;
       split.tooltipFormatter = tooltipFormatter(raw.columns);
@@ -67,17 +86,17 @@ export default function buildHierarchicalDataProvider(Private, Notifier) {
     }
 
     // map the split aggregations into rows.
-    let rows = _.map(extractBuckets(aggData, firstAgg), function (bucket) {
-      let agg = firstAgg._next;
-      let split = buildSplit(agg, metric, bucket[agg.id]);
+    const rows = _.map(extractBuckets(aggData, firstAgg), function (bucket) {
+      const agg = firstAgg._next;
+      const split = buildSplit(agg, metric, bucket[agg.id]);
       // Since splits display labels we need to set it.
       split.label = firstAgg.fieldFormatter()(agg.getKey(bucket));
 
-      let displayName = firstAgg.fieldDisplayName();
+      const displayName = firstAgg.getFieldDisplayName();
       if (!_.isEmpty(displayName)) split.label += ': ' + displayName;
 
       split.tooltipFormatter = tooltipFormatter(raw.columns);
-      let aggConfigResult = new AggConfigResult(firstAgg, null, null, firstAgg.getKey(bucket));
+      const aggConfigResult = new AggConfigResult(firstAgg, null, null, firstAgg.getKey(bucket), bucket.filters);
       split.split = { aggConfig: firstAgg, aggConfigResult: aggConfigResult, key: bucket.key };
       _.each(split.slices.children, function (child) {
         child.aggConfigResult.$parent = aggConfigResult;
@@ -85,7 +104,7 @@ export default function buildHierarchicalDataProvider(Private, Notifier) {
       return split;
     });
 
-    let result = { hits: resp.hits.total, raw: raw };
+    const result = { hits: resp.hits.total, raw: raw };
     if (firstAgg.params.row) {
       result.rows = rows;
     } else {
@@ -94,4 +113,4 @@ export default function buildHierarchicalDataProvider(Private, Notifier) {
 
     return result;
   };
-};
+}

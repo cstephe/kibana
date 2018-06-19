@@ -1,23 +1,41 @@
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 import _ from 'lodash';
 import ngMock from 'ng_mock';
 import expect from 'expect.js';
-import VisProvider from 'ui/vis';
+import { VisProvider } from '..';
 import FixturesStubbedLogstashIndexPatternProvider from 'fixtures/stubbed_logstash_index_pattern';
-import RegistryVisTypesProvider from 'ui/registry/vis_types';
+import { VisTypesRegistryProvider } from '../../registry/vis_types';
+
 describe('Vis Class', function () {
-
-
   let indexPattern;
   let Vis;
   let visTypes;
 
   let vis;
-  let stateFixture = {
+  const stateFixture = {
     type: 'pie',
     aggs: [
       { type: 'avg', schema: 'metric', params: { field: 'bytes' } },
-      { type: 'terms', schema: 'segment', params: { field: 'machine.os' }},
-      { type: 'terms', schema: 'segment', params: { field: 'geo.src' }}
+      { type: 'terms', schema: 'segment', params: { field: 'machine.os' } },
+      { type: 'terms', schema: 'segment', params: { field: 'geo.src' } }
     ],
     params: { isDonut: true },
     listeners: { click: _.noop }
@@ -27,23 +45,19 @@ describe('Vis Class', function () {
   beforeEach(ngMock.inject(function (Private) {
     Vis = Private(VisProvider);
     indexPattern = Private(FixturesStubbedLogstashIndexPatternProvider);
-    visTypes = Private(RegistryVisTypesProvider);
+    visTypes = Private(VisTypesRegistryProvider);
   }));
 
   beforeEach(function () {
     vis = new Vis(indexPattern, stateFixture);
   });
 
-  let verifyVis = function (vis) {
+  const verifyVis = function (vis) {
     expect(vis).to.have.property('aggs');
     expect(vis.aggs).to.have.length(3);
 
     expect(vis).to.have.property('type');
     expect(vis.type).to.eql(visTypes.byName.pie);
-
-    expect(vis).to.have.property('listeners');
-    expect(vis.listeners).to.have.property('click');
-    expect(vis.listeners.click).to.eql(_.noop);
 
     expect(vis).to.have.property('params');
     expect(vis.params).to.have.property('isDonut', true);
@@ -58,42 +72,27 @@ describe('Vis Class', function () {
 
   describe('getState()', function () {
     it('should get a state that represents the... er... state', function () {
-      let state = vis.getEnabledState();
+      const state = vis.getEnabledState();
       expect(state).to.have.property('type', 'pie');
 
       expect(state).to.have.property('params');
       expect(state.params).to.have.property('isDonut', true);
-
-      expect(state).to.have.property('listeners');
-      expect(state.listeners).to.have.property('click');
-      expect(state.listeners.click).to.eql(_.noop);
 
       expect(state).to.have.property('aggs');
       expect(state.aggs).to.have.length(3);
     });
   });
 
-  describe('clone()', function () {
-    it('should make clone of itself', function () {
-      let clone = vis.clone();
-      verifyVis(clone);
-    });
-  });
-
   describe('setState()', function () {
     it('should set the state to defualts', function () {
-      let vis = new Vis(indexPattern);
+      const vis = new Vis(indexPattern);
       expect(vis).to.have.property('type');
       expect(vis.type).to.eql(visTypes.byName.histogram);
       expect(vis).to.have.property('aggs');
       expect(vis.aggs).to.have.length(1);
-      expect(vis).to.have.property('listeners');
-      expect(vis.listeners).to.eql({});
       expect(vis).to.have.property('params');
       expect(vis.params).to.have.property('addLegend', true);
       expect(vis.params).to.have.property('addTooltip', true);
-      expect(vis.params).to.have.property('mode', 'stacked');
-      expect(vis.params).to.have.property('shareYAxis', true);
     });
   });
 
@@ -102,7 +101,7 @@ describe('Vis Class', function () {
       expect(vis.isHierarchical()).to.be(true);
     });
     it('should return false for non-hierarchical vis (like histogram)', function () {
-      let vis = new Vis(indexPattern);
+      const vis = new Vis(indexPattern);
       expect(vis.isHierarchical()).to.be(false);
     });
   });

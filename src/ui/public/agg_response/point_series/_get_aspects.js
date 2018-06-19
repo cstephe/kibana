@@ -1,9 +1,29 @@
-import _ from 'lodash';
-import AggResponsePointSeriesFakeXAspectProvider from 'ui/agg_response/point_series/_fake_x_aspect';
-export default function PointSeriesGetAspects(Private) {
-  let fakeXAspect = Private(AggResponsePointSeriesFakeXAspectProvider);
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 
-  let map = {
+import _ from 'lodash';
+import { PointSeriesFakeXAxisProvider } from './_fake_x_aspect';
+
+export function PointSeriesGetAspectsProvider(Private) {
+  const fakeXAspect = Private(PointSeriesFakeXAxisProvider);
+
+  const map = {
     segment: 'x',
     metric: 'y',
     radius: 'z',
@@ -12,12 +32,12 @@ export default function PointSeriesGetAspects(Private) {
   };
 
   function columnToAspect(aspects, col, i) {
-    let schema = col.aggConfig.schema.name;
+    const schema = col.aggConfig.schema.name;
 
-    let name = map[schema];
+    const name = map[schema];
     if (!name) throw new TypeError('unknown schema name "' + schema + '"');
 
-    let aspect = {
+    const aspect = {
       i: i,
       col: col,
       agg: col.aggConfig
@@ -36,18 +56,18 @@ export default function PointSeriesGetAspects(Private) {
    *                    may be undefined, a single aspect, or an array of aspects.
    */
   return function getAspects(vis, table) {
-    let aspects = _(table.columns)
+    const aspects = _(table.columns)
     // write each column into the aspects under it's group
-    .transform(columnToAspect, {})
-    // unwrap groups that only have one value, and validate groups that have more
-    .transform(function (aspects, group, name) {
-      if (name !== 'y' && group.length > 1) {
-        throw new TypeError('Only multiple metrics are supported in point series');
-      }
+      .transform(columnToAspect, {})
+      // unwrap groups that only have one value, and validate groups that have more
+      .transform(function (aspects, group, name) {
+        if ((name !== 'y' && name !== 'series') && group.length > 1) {
+          throw new TypeError('Only multiple metrics and series are supported in point series');
+        }
 
-      aspects[name] = group.length > 1 ? group : group[0];
-    })
-    .value();
+        aspects[name] = group.length > 1 ? group : group[0];
+      })
+      .value();
 
     if (!aspects.x) {
       aspects.x = fakeXAspect(vis);
@@ -55,4 +75,4 @@ export default function PointSeriesGetAspects(Private) {
 
     return aspects;
   };
-};
+}

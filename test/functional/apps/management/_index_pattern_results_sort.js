@@ -1,133 +1,96 @@
-import {
-  bdd,
-  common,
-  defaultTimeout,
-  settingsPage,
-  scenarioManager,
-  esClient
-} from '../../../support';
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 
-var expect = require('expect.js');
+import expect from 'expect.js';
 
-bdd.describe('index result field sort', function describeIndexTests() {
-  bdd.before(function () {
-    // delete .kibana index and then wait for Kibana to re-create it
-    return esClient.deleteAndUpdateConfigDoc();
-  });
+export default function ({ getService, getPageObjects }) {
+  const kibanaServer = getService('kibanaServer');
+  const retry = getService('retry');
+  const PageObjects = getPageObjects(['settings', 'common']);
 
-  var columns = [{
-    heading: 'name',
-    first: '@message',
-    last: 'xss.raw',
-    selector: function () {
-      return settingsPage.getTableRow(0, 0).getVisibleText();
-    }
-  }, {
-    heading: 'type',
-    first: '_source',
-    last: 'string',
-    selector: function () {
-      return settingsPage.getTableRow(0, 1).getVisibleText();
-    }
-  }];
+  describe('index result field sort', function describeIndexTests() {
+    before(async function () {
+      // delete .kibana index and then wait for Kibana to re-create it
+      await kibanaServer.uiSettings.replace({});
+    });
 
-  columns.forEach(function (col) {
-    bdd.describe('sort by heading - ' + col.heading, function indexPatternCreation() {
-      bdd.before(function () {
-        return settingsPage.navigateTo()
-        .then(function () {
-          return settingsPage.clickExistingData();
+    const columns = [{
+      heading: 'Name',
+      first: '@message',
+      last: 'xss.raw',
+      selector: async function () {
+        return await PageObjects.settings.getTableRow(0, 0).getVisibleText();
+      }
+    }, {
+      heading: 'Type',
+      first: '_source',
+      last: 'string',
+      selector: async function () {
+        return await PageObjects.settings.getTableRow(0, 1).getVisibleText();
+      }
+    }];
+
+    columns.forEach(function (col) {
+      describe('sort by heading - ' + col.heading, function indexPatternCreation() {
+        before(async function () {
+          await PageObjects.settings.navigateTo();
+          await PageObjects.settings.clickKibanaIndices();
+          await PageObjects.settings.createIndexPattern();
         });
-      });
 
-      bdd.beforeEach(function () {
-        return settingsPage.createIndexPattern();
-      });
+        after(async function () {
+          return await PageObjects.settings.removeIndexPattern();
+        });
 
-      bdd.afterEach(function () {
-        return settingsPage.removeIndexPattern();
-      });
-
-      bdd.it('should sort ascending', function pageHeader() {
-        return settingsPage.sortBy(col.heading)
-        .then(function getText() {
-          return col.selector();
-        })
-        .then(function (rowText) {
-          common.saveScreenshot(`Settings-indices-column-${col.heading}-sort-ascending`);
+        it('should sort ascending', async function () {
+          await PageObjects.settings.sortBy(col.heading);
+          const rowText = await col.selector();
           expect(rowText).to.be(col.first);
         });
-      });
 
-      bdd.it('should sort descending', function pageHeader() {
-        return settingsPage.sortBy(col.heading)
-        .then(function sortAgain() {
-          return settingsPage.sortBy(col.heading);
-        })
-        .then(function getText() {
-          return col.selector();
-        })
-        .then(function (rowText) {
-          common.saveScreenshot(`Settings-indices-column-${col.heading}-sort-descending`);
-          expect(rowText).to.be(col.last);
+        it('should sort descending', async function () {
+          await PageObjects.settings.sortBy(col.heading);
+          const getText = await col.selector();
+          expect(getText).to.be(col.last);
         });
       });
     });
-  });
+    describe('field list pagination', function () {
+      const EXPECTED_FIELD_COUNT = 86;
 
-  bdd.describe('field list pagination', function () {
-    var expectedDefaultPageSize = 25;
-    var expectedFieldCount = 85;
-    var expectedLastPageCount = 10;
-    var pages = [1, 2, 3, 4];
+      before(async function () {
+        await PageObjects.settings.navigateTo();
+        await PageObjects.settings.createIndexPattern();
 
-    bdd.before(function () {
-      return settingsPage.navigateTo()
-      .then(function () {
-        return settingsPage.createIndexPattern();
       });
-    });
 
-    bdd.after(function () {
-      return settingsPage.removeIndexPattern();
-    });
+      after(async function () {
+        return await PageObjects.settings.removeIndexPattern();
+      });
 
-    bdd.it('makelogs data should have expected number of fields', function () {
-      return common.try(function () {
-        return settingsPage.getFieldsTabCount()
-        .then(function (tabCount) {
-          expect(tabCount).to.be('' + expectedFieldCount);
+      it('makelogs data should have expected number of fields', async function () {
+        await retry.try(async function () {
+          const TabCount = await PageObjects.settings.getFieldsTabCount();
+          expect(TabCount).to.be('' + EXPECTED_FIELD_COUNT);
+
         });
       });
-    });
-
-    bdd.it('should have correct default page size selected', function () {
-      return settingsPage.getPageSize()
-      .then(function (pageSize) {
-        expect(pageSize).to.be('' + expectedDefaultPageSize);
-      });
-    });
-
-    bdd.it('should have the correct number of rows per page', function () {
-      var pageCount = Math.ceil(expectedFieldCount / expectedDefaultPageSize);
-      var chain = pages.reduce(function (chain, val) {
-        return chain.then(function () {
-          return settingsPage.goToPage(val)
-          .then(function () {
-            return common.sleep(1000);
-          })
-          .then(function () {
-            return settingsPage.getPageFieldCount();
-          })
-          .then(function (pageCount) {
-            common.saveScreenshot('Settings-indices-paged');
-            var expectedSize = (val < 4) ? expectedDefaultPageSize : expectedLastPageCount;
-            expect(pageCount.length).to.be(expectedSize);
-          });
-        });
-      }, Promise.resolve());
-
-      return chain.catch(common.createErrorHandler(this));
-    });
-  }); // end describe pagination
-}); // end index result field sort
+    }); // end describe pagination
+  }); // end index result field sort
+}

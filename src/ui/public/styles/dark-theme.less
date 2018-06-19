@@ -1,11 +1,11 @@
 @import "~ui/styles/dark-variables.less";
-@import "~bootstrap/less/mixins.less";
+@import "~ui/styles/bootstrap/mixins.less";
 
 .tab-dashboard.theme-dark {
   color: @text-color;
   background-color: @dashboard-bg;
 
-// /node_modules/bootstrap/less/scaffolding.less
+// /src/ui/public/styles/bootstrap/scaffolding.less
   a {
     color: @link-color;
 
@@ -15,8 +15,11 @@
     }
   }
 
+  .exitFullScreenMode {
+    background-color: @globalColorDarkestGray;
+  }
 
-// /node_modules/bootstrap/less/forms.less
+// /src/ui/public/styles/bootstrap/forms.less
   .form-control {
     color: @input-color;
     background-color: @input-bg;
@@ -29,13 +32,13 @@
   }
 
 
-// /node_modules/bootstrap/less/panels.less
+// /src/ui/public/styles/bootstrap/panels.less
   .panel {
     background-color: @panel-bg;
   }
 
 
-// /node_modules/bootstrap/less/tables.less
+// /src/ui/public/styles/bootstrap/tables.less
   .table {
     // Cells
     > thead,
@@ -69,11 +72,15 @@
         color: @table-sort-color;
       }
 
+      button.fa-sort-asc,
+      button.fa-sort-down,
       i.fa-sort-asc,
       i.fa-sort-down {
         color: @table-sort-asc-color;
       }
 
+      button.fa-sort-desc,
+      button.fa-sort-up,
       i.fa-sort-desc,
       i.fa-sort-up {
         color: @table-sort-desc-color;
@@ -82,37 +89,17 @@
   }
 
 
-// /node_modules/bootstrap/less/buttons.less
-  .btn {
-    background-color: @dark-button-bg;
-    color: @dark-button-font;
-
-    &:hover,
-    &:focus,
-    &.focus {
-      color: @btn-default-color;
-    }
-
-    .findme {
-      font-weight: bold;
-    }
-  }
-
-  .btn-default {
-    .button-variant(@btn-default-color; @btn-default-bg; @btn-default-border);
-  }
-  .btn-primary {
-    .button-variant(@btn-primary-color; @btn-primary-bg; @btn-primary-border);
-  }
-
-
-// /node_modules/bootstrap/less/list-group.less
+// /src/ui/public/styles/bootstrap/list-group.less
   .list-group-item {
     background-color: @list-group-bg;
-    border: 0 none transparent;
+    border: 1px solid @gray7;
     &:nth-child(even) {
       background-color: @gray4;
     }
+  }
+
+  .list-group-item--noBorder {
+    border-top: 0;
   }
 
   a.list-group-item,
@@ -155,9 +142,15 @@
     }
   }
 
-  .panel-default {
-    border-color: @panel-default-border;
+  .panel--edit-mode {
+    border-color: #222;
+  }
 
+  .panel--edit-mode:hover {
+    border-color: @globalColorBlue;
+  }
+
+  .panel-default {
     & > .panel-heading {
       color: @panel-default-text;
       background-color: @panel-default-heading-bg;
@@ -179,7 +172,7 @@
   }
 
 
-// /node_modules/bootstrap/less/navs.less
+// /src/ui/public/styles/bootstrap/navs.less
   .nav {
     > li {
       > a {
@@ -192,7 +185,7 @@
   }
 
 
-// /node_modules/bootstrap/less/navs.less
+// /src/ui/public/styles/bootstrap/navs.less
   .nav-tabs {
     border-bottom: 1px solid @gray4;
     > li {
@@ -239,25 +232,22 @@
         color: @saved-object-finder-link-color !important;
       }
     }
+  }
 
-    .finder-options {
-      > li {
-        &.active {
-          background-color: @component-active-bg;
-          color: @component-active-color;
-          a {
-            color: @component-active-color;
-          }
-        }
+  saved-object-finder, paginated-selectable-list {
+    ul.li-striped {
+      li {
+        border: none;
       }
     }
   }
 
   .cell-hover {
     background-color: @table-cell-hover-bg;
-  }
-  .cell-hover:hover {
-    background-color: @table-cell-hover-hover-bg;
+
+    .table-cell-filter {
+      background-color: @table-cell-hover-bg;
+    }
   }
 
 
@@ -268,33 +258,37 @@
 
 
 // /src/ui/public/agg_table/agg_table.less
-  .agg-table {
+  .agg-table-paginated {
+    tr:hover td {
+      background-color: @table-row-hover-bg;
 
-    &-paginated {
-      tr:hover td {
+      .table-cell-filter {
         background-color: @table-row-hover-bg;
-      }
-
-      .cell-hover:hover {
-        background-color: @table-cell-hover-hover-bg;
       }
     }
   }
 
+  .discover-table-row {
+    .docTableRowFilterButton {
+      background-color: @panel-bg;
+    }
+  }
 
 // /src/ui/public/visualize/visualize.less
-  visualize-spy {
-    .visualize-show-spy {
-      border-top-color: @visualize-show-spy-border;
+  .visualize-show-spy {
+    border-top-color: @visualize-show-spy-border;
+  }
 
-    }
-    .visualize-spy-container {
-      pre {
-        border-color: @visualize-show-spy-border;
-        color: @visualize-spy-container-pre-color;
-        opacity: 1;
-        background-color: @visualize-spy-container-pre-bg;
-      }
+  visualize-spy {
+    background-color: @visualize-spy-container-pre-bg;
+  }
+
+  .visualize-spy-container {
+    pre {
+      border-color: @visualize-show-spy-border;
+      color: @visualize-spy-container-pre-color;
+      opacity: 1;
+      background-color: @visualize-spy-container-pre-bg;
     }
   }
 
@@ -310,6 +304,10 @@
     fill: @svg-tick-text-color;
   }
 
+  .chart-label {
+    fill: @svg-tick-text-color;
+  }
+
   .brush .extent {
     stroke: @svg-brush-color;
   }
@@ -321,6 +319,10 @@
 
 
 // /src/ui/public/vislib/styles/_legend.less
+  .legend {
+    background-color: @dashboard-panel-bg;
+  }
+
   .legend-col-wrapper {
 
     .legend-ul {
@@ -330,30 +332,20 @@
 
   }
 
-  .legend-value {
-     &-title {
-      padding: 3px;
+  .legend-value-title {
+    padding: 3px;
 
-      &:hover {
-        background-color: @sidebar-hover-bg;
-      }
+    &:hover {
+      background-color: @sidebar-hover-bg;
     }
+  }
 
-    &-full {
-      background-color: @gray3;
-    }
+  .legend-value-full {
+    background-color: @gray3;
+  }
 
-    &-details {
-      border-bottom: 1px solid @sidebar-bg;
-
-      .filter-button {
-        background-color: @sidebar-bg;
-
-        &:hover {
-          background-color: @sidebar-hover-bg;
-        }
-      }
-    }
+  .legend-value-details {
+    border-bottom: 1px solid @sidebar-bg;
   }
 
 
@@ -441,7 +433,7 @@
 
 
 // /src/ui/public/filter_bar/filter_bar.less
-  filter-bar .confirm {
+  .filter-bar-confirm {
     background: @filter-bar-confirm-bg;
     border-bottom-color: @filter-bar-confirm-border;
 
@@ -451,13 +443,9 @@
     }
   }
 
-  filter-bar .bar {
+  .filter-bar {
     background: @filter-bar-bar-bg;
     border-bottom-color: @filter-bar-bar-border;
-
-    &-condensed {
-      background: @filter-bar-bar-condensed-bg;
-    }
 
     .filter {
       background-color: @filter-bar-bar-filter-bg;
@@ -473,14 +461,14 @@
     }
   }
 
+    .filter-bar-condensed {
+      background: @filter-bar-bar-condensed-bg;
+    }
+
 
 // /src/ui/public/styles/config.less
   .config {
     border-bottom: 0 none transparent;
-
-    .config-close {
-      background-color: @config-close-bg;
-    }
 
     .container-fluid {
       background-color: @config-bg;
@@ -520,16 +508,14 @@
 // /src/ui/public/styles/pagination.less
   paginate {
     paginate-controls {
-      .pagination-other-pages {
-        &-list {
-          > li {
-            a {
-              background-color: @dark-button-bg;
-              color: @white;
-            }
-            &.active a {
-              color: @paginate-page-link-active-color;
-            }
+      .pagination-other-pages-list {
+        > li {
+          a {
+            background-color: @dark-button-bg;
+            color: @white;
+          }
+          &.active a {
+            color: @paginate-page-link-active-color;
           }
         }
       }
@@ -537,39 +523,41 @@
   }
 
 
-// /src/plugins/kibana/public/dashboard/styles/main.less
+// /src/core_plugins/kibana/public/dashboard/styles/main.less
   .start-screen {
+    background-color: @dashboard-bg-with-margins;
+  }
+
+  .react-grid-layout {
     background-color: @dashboard-bg;
   }
 
-  .gridster {
-    background-color: @dashboard-bg;
+  .dashboard-panel {
+    background: @dashboard-panel-bg;
+    color: @dashboard-panel-color;
 
-    dashboard-panel {
-      background: @dashboard-panel-bg;
-      color: @dashboard-panel-color;
+    .panel {
 
-      .panel {
-        .panel-heading {
-          a {
-            color: @dashboard-panel-heading-link-color;
-            &:hover {
-              color: @dashboard-panel-heading-link-hover-color;
-            }
-          }
-          span.panel-title {
-            color: @dashboard-panel-heading-link-color;
-          }
-          i {
-            color: @dashboard-panel-heading-link-color;
-            opacity: 1;
+      .panel-heading {
+        a {
+          color: @dashboard-panel-heading-link-color;
+          &:hover {
+            color: @dashboard-panel-heading-link-hover-color;
           }
         }
+        span.panel-title {
+          color: @dashboard-panel-heading-link-color;
+        }
+        i {
+          color: @dashboard-panel-heading-link-color;
+          opacity: 1;
+        }
+      }
 
-        .load-error {
-          .fa-exclamation-triangle {
-            color: @dashboard-panel-load-error-color;
-          }
+
+      .load-error {
+        .fa-exclamation-triangle {
+          color: @dashboard-panel-load-error-color;
         }
       }
     }
@@ -585,5 +573,114 @@
   .kibana-nav-actions .active {
     background-color: @config-bg;
     color: @dark-button-font;
+  }
+
+  .truncate-by-height:before {
+    background: linear-gradient(to bottom, transparent 0%, @dashboard-bg 100%) !important;
+  }
+
+  kbn-table, .kbn-table, tbody[kbn-rows] {
+    dl.source {
+      dt {
+        background: #5f5f5f;
+        color: #ffffff;
+      }
+    }
+  }
+
+  .slice {
+    stroke: @panel-bg;
+  }
+}
+
+// react-input-range
+.theme-dark {
+  .input-range__track {
+    background-color: #cecece;
+  }
+
+  .input-range__slider {
+    background: #444444;
+    border: 1px solid #444444;
+  }
+
+  .input-range__track--active {
+    background: #444444;
+  }
+
+  .input-range__label {
+    color: #cecece;
+  }
+}
+
+.theme-dark {
+  .markdown-body {
+    color: @text-color;
+  }
+
+  .markdown-body code {
+    color: #ffffff;
+    background-color: #5f5f5f;
+  }
+
+  .markdown-body pre {
+    background-color: #5f5f5f;
+    border: none;
+  }
+
+  .markdown-body table {
+    border-left: 1px solid @table-border-color;
+  }
+
+  .markdown-body table th,
+  .markdown-body table td {
+    border-top: 1px solid @table-border-color;
+    border-bottom: 1px solid @table-border-color;
+
+    &:last-child {
+      border-right: 1px solid @table-border-color;
+    }
+  }
+
+  .markdown-body table tr {
+    border-top: 1px solid @table-border-color;
+  }
+
+  .markdown-body blockquote {
+    color: @dimmed-text-color;
+  }
+
+  /**
+ * The dashboard background color is the same as the panel color by default. When the user wants to use margins, we
+ * need to give a different background color so the panels are distinguishable from the background.
+ */
+  .layout-with-margins {
+    background-color: @dashboard-bg-with-margins;
+    .panel-default {
+      & > .panel-heading {
+        background-color: @panel-bg-with-margins;
+      }
+    }
+    .panel-content {
+      background-color: @panel-bg-with-margins;
+    }
+    .panel {
+      background-color: @panel-bg-with-margins;
+      border: 1px solid #444444;
+    }
+  }
+  .dashboard-viewport {
+    background-color: @dashboard-bg;
+  }
+  .dashboard-viewport-with-margins {
+    background-color: @dashboard-bg-with-margins;
+  }
+
+  .dashboard-container-with-margins {
+    background-color: @dashboard-bg-with-margins;
+  }
+
+  .react-grid-item > .react-resizable-handle {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6' viewBox='0 0 6 6'%3E%3Cpolygon fill='%23EFEEEE' points='6 6 0 6 0 4.2 4 4.2 4.2 4.2 4.2 0 6 0' opacity='.302'/%3E%3C/svg%3E%0A");
   }
 }

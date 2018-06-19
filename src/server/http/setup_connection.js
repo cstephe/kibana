@@ -1,13 +1,26 @@
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 import { readFileSync } from 'fs';
-import { format as formatUrl } from 'url';
-import httpolyglot from 'httpolyglot';
+import secureOptions from './secure_options';
 
-import tlsCiphers from './tls_ciphers';
-
-export default function (kbnServer, server, config) {
-  // this mixin is used outside of the kbn server, so it MUST work without a full kbnServer object.
-  kbnServer = null;
-
+export function setupConnection(server, config) {
   const host = config.get('server.host');
   const port = config.get('server.port');
 
@@ -21,43 +34,52 @@ export default function (kbnServer, server, config) {
       cors: config.get('server.cors'),
       payload: {
         maxBytes: config.get('server.maxPayloadBytes')
+      },
+      validate: {
+        options: {
+          abortEarly: false
+        }
       }
     }
   };
 
-  // enable tlsOpts if ssl key and cert are defined
-  const useSsl = config.get('server.ssl.key') && config.get('server.ssl.cert');
+  const useSsl = config.get('server.ssl.enabled');
 
   // not using https? well that's easy!
   if (!useSsl) {
-    server.connection(connectionOptions);
+    const connection = server.connection(connectionOptions);
+
+    // revert to previous 5m keepalive timeout in Node < 8
+    connection.listener.keepAliveTimeout = 120e3;
+
     return;
   }
 
-  server.connection({
+  const connection = server.connection({
     ...connectionOptions,
-    tls: true,
-    listener: httpolyglot.createServer({
+    tls: {
       key: readFileSync(config.get('server.ssl.key')),
-      cert: readFileSync(config.get('server.ssl.cert')),
+      cert: readFileSync(config.get('server.ssl.certificate')),
+      ca: config.get('server.ssl.certificateAuthorities').map(ca => readFileSync(ca, 'utf8')),
+      passphrase: config.get('server.ssl.keyPassphrase'),
 
-      ciphers: tlsCiphers,
+      ciphers: config.get('server.ssl.cipherSuites').join(':'),
       // We use the server's cipher order rather than the client's to prevent the BEAST attack
-      honorCipherOrder: true
-    })
+      honorCipherOrder: true,
+      secureOptions: secureOptions(config.get('server.ssl.supportedProtocols'))
+    }
   });
 
-  server.ext('onRequest', function (req, reply) {
-    if (req.raw.req.socket.encrypted) {
-      reply.continue();
-    } else {
-      reply.redirect(formatUrl({
-        port,
-        protocol: 'https',
-        hostname: host,
-        pathname: req.url.pathname,
-        search: req.url.search,
-      }));
+  // revert to previous 5m keepalive timeout in Node < 8
+  connection.listener.keepAliveTimeout = 120e3;
+
+  const badRequestResponse = new Buffer('HTTP/1.1 400 Bad Request\r\n\r\n', 'ascii');
+  connection.listener.on('clientError', (err, socket) => {
+    if (socket.writable) {
+      socket.end(badRequestResponse);
+    }
+    else {
+      socket.destroy(err);
     }
   });
 }

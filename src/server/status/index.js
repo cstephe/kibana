@@ -1,49 +1,47 @@
-import _ from 'lodash';
-import ServerStatus from './server_status';
-import wrapAuthConfig from './wrap_auth_config';
-import { join } from 'path';
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 
-export default function (kbnServer, server, config) {
+import ServerStatus from './server_status';
+import { MetricsCollector } from './metrics_collector';
+import { Metrics } from './metrics_collector/metrics';
+import { registerStatusPage, registerStatusApi, registerStatsApi } from './routes';
+
+export function statusMixin(kbnServer, server, config) {
+  const collector = new MetricsCollector(server, config);
   kbnServer.status = new ServerStatus(kbnServer.server);
 
-  if (server.plugins['even-better']) {
-    kbnServer.mixin(require('./metrics'));
+  const { ['even-better']: evenBetter } = server.plugins;
+
+  if (evenBetter) {
+    const metrics = new Metrics(config, server);
+
+    evenBetter.monitor.on('ops', event => {
+      // for status API (to deprecate in next major)
+      metrics.capture(event).then(data => { kbnServer.metrics = data; });
+
+      // for metrics API (replacement API)
+      collector.collect(event); // collect() is async, but here we aren't depending on the return value
+    });
   }
 
-  const wrapAuth = wrapAuthConfig(config.get('status.allowAnonymous'));
-
-  server.route(wrapAuth({
-    method: 'GET',
-    path: '/api/status',
-    handler: function (request, reply) {
-      return reply({
-        name: config.get('server.name'),
-        uuid: config.get('uuid'),
-        status: kbnServer.status.toJSON(),
-        metrics: kbnServer.metrics
-      });
-    }
-  }));
-
-  server.decorate('reply', 'renderStatusPage', async function () {
-    const app = kbnServer.uiExports.getHiddenApp('status_page');
-    const response = await getResponse(this);
-    response.code(kbnServer.status.isGreen() ? 200 : 503);
-    return response;
-
-    function getResponse(ctx) {
-      if (app) {
-        return ctx.renderApp(app);
-      }
-      return ctx(kbnServer.status.toString());
-    }
-  });
-
-  server.route(wrapAuth({
-    method: 'GET',
-    path: '/status',
-    handler: function (request, reply) {
-      return reply.renderStatusPage();
-    }
-  }));
-};
+  // init routes
+  registerStatusPage(kbnServer, server, config);
+  registerStatusApi(kbnServer, server, config);
+  registerStatsApi(kbnServer, server, config, collector);
+}

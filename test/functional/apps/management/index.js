@@ -1,25 +1,50 @@
-import { bdd, defaultTimeout, scenarioManager, esClient, common } from '../../../support';
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 
-bdd.describe('settings app', function () {
-  this.timeout = defaultTimeout;
+export default function ({ getService, loadTestFile }) {
+  const esArchiver = getService('esArchiver');
 
-  // on setup, we create an settingsPage instance
-  // that we will use for all the tests
-  bdd.before(function () {
-    return scenarioManager.loadIfEmpty('makelogs');
-  });
-
-  bdd.after(function () {
-    return scenarioManager.unload('makelogs')
-    .then(function () {
-      return esClient.delete('.kibana');
+  describe('management', function () {
+    // on setup, we create an settingsPage instance
+    // that we will use for all the tests
+    before(async function () {
+      await esArchiver.unload('logstash_functional');
+      await esArchiver.load('empty_kibana');
+      await esArchiver.loadIfNeeded('makelogs');
     });
+
+    after(async function () {
+      await esArchiver.unload('makelogs');
+      await esArchiver.unload('empty_kibana');
+    });
+
+    loadTestFile(require.resolve('./_create_index_pattern_wizard'));
+    loadTestFile(require.resolve('./_index_pattern_create_delete'));
+    loadTestFile(require.resolve('./_index_pattern_results_sort'));
+    loadTestFile(require.resolve('./_index_pattern_popularity'));
+    loadTestFile(require.resolve('./_kibana_settings'));
+    loadTestFile(require.resolve('./_scripted_fields'));
+    loadTestFile(require.resolve('./_index_pattern_filter'));
+    loadTestFile(require.resolve('./_scripted_fields_filter'));
+    loadTestFile(require.resolve('./_import_objects'));
+    loadTestFile(require.resolve('./_test_huge_fields'));
+    loadTestFile(require.resolve('./_handle_alias'));
   });
 
-  require('./_initial_state');
-  require('./_creation_form_changes');
-  require('./_index_pattern_create_delete');
-  require('./_index_pattern_results_sort');
-  require('./_index_pattern_popularity');
-  require('./_kibana_settings');
-});
+}

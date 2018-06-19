@@ -1,20 +1,36 @@
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 import _ from 'lodash';
 import fixtures from 'fixtures/fake_hierarchical_data';
 import expect from 'expect.js';
 import ngMock from 'ng_mock';
-import AggResponseTabifyTabifyProvider from 'ui/agg_response/tabify/tabify';
-import VisProvider from 'ui/vis';
+import { tabifyAggResponse } from '../tabify';
+import { VisProvider } from '../../../vis';
 import FixturesStubbedLogstashIndexPatternProvider from 'fixtures/stubbed_logstash_index_pattern';
-describe('tabifyAggResponse Integration', function () {
 
+describe('tabifyAggResponse Integration', function () {
   let Vis;
-  let Buckets;
   let indexPattern;
-  let tabifyAggResponse;
 
   beforeEach(ngMock.module('kibana'));
-  beforeEach(ngMock.inject(function (Private, $injector) {
-    tabifyAggResponse = Private(AggResponseTabifyTabifyProvider);
+  beforeEach(ngMock.inject(function (Private) {
     Vis = Private(VisProvider);
     indexPattern = Private(FixturesStubbedLogstashIndexPatternProvider);
   }));
@@ -26,13 +42,16 @@ describe('tabifyAggResponse Integration', function () {
   }
 
   it('transforms a simple response properly', function () {
-    let vis = new Vis(indexPattern, {
+    const vis = new Vis(indexPattern, {
       type: 'histogram',
       aggs: []
     });
     normalizeIds(vis);
 
-    let resp = tabifyAggResponse(vis, fixtures.metricOnly, { canSplit: false });
+    const resp = tabifyAggResponse(vis.getAggConfig().getResponseAggs(), fixtures.metricOnly, {
+      canSplit: false,
+      isHierarchical: vis.isHierarchical()
+    });
 
     expect(resp).to.not.have.property('tables');
     expect(resp).to.have.property('rows').and.property('columns');
@@ -81,7 +100,7 @@ describe('tabifyAggResponse Integration', function () {
     function expectRootGroup(rootTableGroup, expectInnerTables) {
       expect(rootTableGroup).to.have.property('tables');
 
-      let tables = rootTableGroup.tables;
+      const tables = rootTableGroup.tables;
       expect(tables).to.be.an('array').and.have.length(3);
       expectExtensionSplit(tables[0], 'png', expectInnerTables);
       expectExtensionSplit(tables[1], 'css', expectInnerTables);
@@ -128,13 +147,13 @@ describe('tabifyAggResponse Integration', function () {
     // check for an empty cell
     function expectEmpty(val) {
       expect(val)
-      .to.be('');
+        .to.be('');
     }
 
     // check for an OS term
     function expectOS(val) {
       expect(val)
-      .to.match(/^(win|mac|linux)$/);
+        .to.match(/^(win|mac|linux)$/);
     }
 
     // check for something like an average bytes result
@@ -155,7 +174,7 @@ describe('tabifyAggResponse Integration', function () {
       // only complete rows, and only put the metrics at the end.
 
       vis.isHierarchical = _.constant(false);
-      let tabbed = tabifyAggResponse(vis, esResp);
+      const tabbed = tabifyAggResponse(vis.getAggConfig().getResponseAggs(), esResp, { isHierarchical: vis.isHierarchical() });
 
       expectRootGroup(tabbed, function expectTable(table, splitKey) {
         expectColumns(table, [src, os, avg]);
@@ -181,8 +200,9 @@ describe('tabifyAggResponse Integration', function () {
       // the existing bucket and it's metric
 
       vis.isHierarchical = _.constant(true);
-      let tabbed = tabifyAggResponse(vis, esResp, {
-        partialRows: true
+      const tabbed = tabifyAggResponse(vis.getAggConfig().getResponseAggs(), esResp, {
+        partialRows: true,
+        isHierarchical: vis.isHierarchical()
       });
 
       expectRootGroup(tabbed, function expectTable(table, splitKey) {
@@ -215,9 +235,10 @@ describe('tabifyAggResponse Integration', function () {
       // the end
 
       vis.isHierarchical = _.constant(true);
-      let tabbed = tabifyAggResponse(vis, esResp, {
+      const tabbed = tabifyAggResponse(vis.getAggConfig().getResponseAggs(), esResp, {
         partialRows: true,
-        minimalColumns: true
+        minimalColumns: true,
+        isHierarchical: vis.isHierarchical()
       });
 
       expectRootGroup(tabbed, function expectTable(table, splitKey) {
@@ -247,11 +268,12 @@ describe('tabifyAggResponse Integration', function () {
       // create metric columns after each bucket
 
       vis.isHierarchical = _.constant(false);
-      let tabbed = tabifyAggResponse(vis, esResp, {
-        minimalColumns: false
+      const tabbed = tabifyAggResponse(vis.getAggConfig().getResponseAggs(), esResp, {
+        minimalColumns: false,
+        isHierarchical: vis.isHierarchical()
       });
 
-      expectRootGroup(tabbed, function expectTable(table, splitKey) {
+      expectRootGroup(tabbed, function expectTable(table) {
         expectColumns(table, [src, os, avg]);
 
         table.rows.forEach(function (row) {

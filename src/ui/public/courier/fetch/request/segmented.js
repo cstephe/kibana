@@ -1,20 +1,37 @@
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 import _ from 'lodash';
-import { isNumber } from 'lodash';
+import { Notifier } from '../../../notify';
+import { SearchRequestProvider } from './search_request';
+import { SegmentedHandleProvider } from './segmented_handle';
+import { pushAll } from '../../../utils/collection';
 
-import Notifier from 'ui/notify/notifier';
-
-import SearchRequestProvider from './search';
-import SegmentedHandleProvider from './segmented_handle';
-
-export default function SegmentedReqProvider(es, Private, Promise, timefilter, config) {
-  const SearchReq = Private(SearchRequestProvider);
+export function SegmentedRequestProvider(Private, timefilter, config) {
+  const SearchRequest = Private(SearchRequestProvider);
   const SegmentedHandle = Private(SegmentedHandleProvider);
 
   const notify = new Notifier({
     location: 'Segmented Fetch'
   });
 
-  class SegmentedReq extends SearchReq {
+  class SegmentedReq extends SearchRequest {
     constructor(source, defer, initFn) {
       super(source, defer);
 
@@ -42,34 +59,35 @@ export default function SegmentedReqProvider(es, Private, Promise, timefilter, c
     *********/
 
     start() {
-      super.start();
+      return super.start().then(() => {
+        this._complete = [];
+        this._active = null;
+        this._segments = [];
+        this._all = [];
+        this._queue = [];
 
-      this._complete = [];
-      this._active = null;
-      this._segments = [];
-      this._all = [];
-      this._queue = [];
+        this._mergedResp = {
+          took: 0,
+          hits: {
+            hits: [],
+            total: 0,
+            max_score: 0
+          }
+        };
 
-      this._mergedResp = {
-        took: 0,
-        hits: {
-          hits: [],
-          total: 0,
-          max_score: 0
-        }
-      };
+        // give the request consumer a chance to receive each segment and set
+        // parameters via the handle
+        if (_.isFunction(this._initFn)) this._initFn(this._handle);
+        return this._createQueue();
+      })
+        .then((queue) => {
+          if (this.stopped) return;
 
-      // give the request consumer a chance to receive each segment and set
-      // parameters via the handle
-      if (_.isFunction(this._initFn)) this._initFn(this._handle);
-      return this._createQueue().then((queue) => {
-        if (this.stopped) return;
+          this._all = queue.slice(0);
 
-        this._all = queue.slice(0);
-
-        // Send the initial fetch status
-        this._reportStatus();
-      });
+          // Send the initial fetch status
+          return this._reportStatus();
+        });
     }
 
     continue() {
@@ -89,9 +107,9 @@ export default function SegmentedReqProvider(es, Private, Promise, timefilter, c
         const indexCount = Math.max(1, Math.floor(this._queue.length / remainingSegments));
 
         const indices = this._active = this._queue.splice(0, indexCount);
-        params.index = _.pluck(indices, 'index');
+        params.index = indices.map(({ index }) => index).join(',');
 
-        if (isNumber(this._desiredSize)) {
+        if (_.isNumber(this._desiredSize)) {
           params.body.size = this._pickSizeForIndices(indices);
         }
 
@@ -185,14 +203,11 @@ export default function SegmentedReqProvider(es, Private, Promise, timefilter, c
       this._queueCreated = false;
 
       return indexPattern.toDetailedIndexList(timeBounds.min, timeBounds.max, this._direction)
-      .then(queue => {
-        if (!_.isArray(queue)) queue = [queue];
-
-        this._queue = queue;
-        this._queueCreated = true;
-
-        return queue;
-      });
+        .then(queue => {
+          this._queue = queue;
+          this._queueCreated = true;
+          return queue;
+        });
     }
 
     _reportStatus() {
@@ -231,7 +246,7 @@ export default function SegmentedReqProvider(es, Private, Promise, timefilter, c
       const desiredSize = this._desiredSize;
       const sortFn = this._sortFn;
 
-      _.pushAll(hits, mergedHits);
+      pushAll(hits, mergedHits);
 
       if (sortFn) {
         notify.event('resort rows', function () {
@@ -239,7 +254,7 @@ export default function SegmentedReqProvider(es, Private, Promise, timefilter, c
         });
       }
 
-      if (isNumber(desiredSize)) {
+      if (_.isNumber(desiredSize)) {
         this._mergedResp.hits.hits = mergedHits.slice(0, desiredSize);
       }
     }
@@ -293,7 +308,7 @@ export default function SegmentedReqProvider(es, Private, Promise, timefilter, c
       const desiredSize = this._desiredSize;
 
       const size = _.size(hits);
-      if (!isNumber(desiredSize) || size < desiredSize) {
+      if (!_.isNumber(desiredSize) || size < desiredSize) {
         this._hitWindow = {
           size: size,
           min: -Infinity,
@@ -319,7 +334,7 @@ export default function SegmentedReqProvider(es, Private, Promise, timefilter, c
       const hitWindow = this._hitWindow;
       const desiredSize = this._desiredSize;
 
-      if (!isNumber(desiredSize)) return null;
+      if (!_.isNumber(desiredSize)) return null;
       // we don't have any hits yet, get us more info!
       if (!hitWindow) return desiredSize;
       // the order of documents isn't important, just get us more
@@ -336,4 +351,4 @@ export default function SegmentedReqProvider(es, Private, Promise, timefilter, c
   SegmentedReq.prototype.mergedSegment = notify.timed('merge response segment', SegmentedReq.prototype.mergedSegment);
 
   return SegmentedReq;
-};
+}
